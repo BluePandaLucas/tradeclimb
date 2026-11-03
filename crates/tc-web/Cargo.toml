@@ -1,0 +1,22 @@
+[package]
+name = "tc-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+leptos = { version = "0.8", features = ["csr"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "EventSource", "MessageEvent", "Event", "HtmlSelectElement", "HtmlInputElement", "Location", "Storage", "Element", "MediaQueryList"] }
+gloo-net = "0.6"
+console_error_panic_hook = "0.1"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

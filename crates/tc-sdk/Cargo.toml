@@ -1,0 +1,17 @@
+[package]
+name = "tc-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+rust_decimal.workspace = true
+chrono.workspace = true
+tc-core = { version = "0.1.0", path = "../tc-core" }
+reqwest.workspace = true

@@ -1,0 +1,46 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.99"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rust_decimal = { version = "1", features = ["serde-str"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4", "serde"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs", "trace", "limit"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rand = "0.9"
+flate2 = "1"
+parquet = { version = "60", default-features = false, features = ["arrow", "snap"] }
+arrow-array = "60"
+arrow-schema = "60"
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }

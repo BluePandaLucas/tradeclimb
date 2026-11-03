@@ -1,0 +1,18 @@
+{
+  "candles_per_second": 1140371.378883891,
+  "dataset": "c85dffb6ac8d30b701b95445271bfcc2cdfa892c30a873b3c054d1e3ec597b3a",
+  "financial_feedback": "withheld",
+  "load_seconds": 2.325659563,
+  "rows": 9489303,
+  "simulation_seconds": 8.321239182,
+  "synthetic": false,
+  "total_seconds": 10.646908005,
+  "wall_seconds": 10.755383884001276,
+  "peak_rss_mib": 1726.78515625,
+  "cpu": "AMD Ryzen 7 5800X",
+  "logical_cpus": 16,
+  "cache_state": "warm filesystem cache after import",
+  "single_worker": true,
+  "drawdown_halt_disabled": true,
+  "compile_import_excluded": true
+}

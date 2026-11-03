@@ -1,0 +1,7 @@
+{
+  "duration_seconds": 180,
+  "non_warmup_candle_frames": 2,
+  "recorded_fills": 2,
+  "state": "stopped",
+  "real_orders": false
+}

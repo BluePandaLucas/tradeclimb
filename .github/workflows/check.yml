@@ -1,0 +1,25 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/check
+      - name: Package browser and exercise real worker workflow
+        run: |
+          cargo build --locked --release --bin tc
+          cargo build --manifest-path examples/strategy/Cargo.toml --release --locked
+          cargo install wasm-bindgen-cli --version 0.2.130 --locked
+          ./scripts/build-web
+          python3 scripts/smoke.py
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2

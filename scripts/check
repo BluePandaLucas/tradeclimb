@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --exclude tc-web --all-targets -- -D warnings
+cargo test --locked --workspace --exclude tc-web
+cargo clippy --locked -p tc-web --target wasm32-unknown-unknown -- -D warnings
+cargo build --locked -p tc-web --target wasm32-unknown-unknown --release

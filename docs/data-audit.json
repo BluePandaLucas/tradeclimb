@@ -1,0 +1,166 @@
+{
+  "dataset": "c85dffb6ac8d30b701b95445271bfcc2cdfa892c30a873b3c054d1e3ec597b3a",
+  "venue": "bitvavo",
+  "start": 1667174400000,
+  "end": 1793491200000,
+  "rows": 9489303,
+  "accepted": false,
+  "coverage": [
+    {
+      "market": "BTC-EUR",
+      "rows": 2012669,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 92611,
+      "largest_gap_minutes": 360
+    },
+    {
+      "market": "ETH-EUR",
+      "rows": 1899708,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 205572,
+      "largest_gap_minutes": 361
+    },
+    {
+      "market": "SOL-EUR",
+      "rows": 1875191,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 230089,
+      "largest_gap_minutes": 362
+    },
+    {
+      "market": "XRP-EUR",
+      "rows": 1939756,
+      "first": 1667174400000,
+      "last": 1793491080000,
+      "missing_minutes": 165524,
+      "largest_gap_minutes": 360
+    },
+    {
+      "market": "ADA-EUR",
+      "rows": 1761979,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 343301,
+      "largest_gap_minutes": 374
+    }
+  ],
+  "btc_long_gaps": [
+    {
+      "market": "BTC-EUR",
+      "start": 1690074000000,
+      "end": 1690095600000,
+      "minutes": 360,
+      "start_utc": "2023-07-23T01:00:00+00:00",
+      "end_utc": "2023-07-23T07:00:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1745365800000,
+      "end": 1745384400000,
+      "minutes": 310,
+      "start_utc": "2025-04-22T23:50:00+00:00",
+      "end_utc": "2025-04-23T05:00:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1699964580000,
+      "end": 1699983000000,
+      "minutes": 307,
+      "start_utc": "2023-11-14T12:23:00+00:00",
+      "end_utc": "2023-11-14T17:30:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1737248400000,
+      "end": 1737266400000,
+      "minutes": 300,
+      "start_utc": "2025-01-19T01:00:00+00:00",
+      "end_utc": "2025-01-19T06:00:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1755388920000,
+      "end": 1755406800000,
+      "minutes": 298,
+      "start_utc": "2025-08-17T00:02:00+00:00",
+      "end_utc": "2025-08-17T05:00:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1759017840000,
+      "end": 1759035660000,
+      "minutes": 297,
+      "start_utc": "2025-09-28T00:04:00+00:00",
+      "end_utc": "2025-09-28T05:01:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1734224700000,
+      "end": 1734242400000,
+      "minutes": 295,
+      "start_utc": "2024-12-15T01:05:00+00:00",
+      "end_utc": "2024-12-15T06:00:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1751761500000,
+      "end": 1751778180000,
+      "minutes": 278,
+      "start_utc": "2025-07-06T00:25:00+00:00",
+      "end_utc": "2025-07-06T05:03:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1740880800000,
+      "end": 1740895200000,
+      "minutes": 240,
+      "start_utc": "2025-03-02T02:00:00+00:00",
+      "end_utc": "2025-03-02T06:00:00+00:00"
+    },
+    {
+      "market": "BTC-EUR",
+      "start": 1743296400000,
+      "end": 1743310800000,
+      "minutes": 240,
+      "start_utc": "2025-03-30T01:00:00+00:00",
+      "end_utc": "2025-03-30T05:00:00+00:00"
+    }
+  ],
+  "largest_gap_direct_recheck_rows": 0,
+  "note": "No cross-venue or synthetic gap filling. Main research validation budget remains unused.",
+  "shared_july_2023_gap": [
+    {
+      "market": "BTC-EUR",
+      "start_utc": "2023-07-23T01:00:00+00:00",
+      "end_utc": "2023-07-23T07:00:00+00:00",
+      "minutes": 360
+    },
+    {
+      "market": "ETH-EUR",
+      "start_utc": "2023-07-23T00:59:00+00:00",
+      "end_utc": "2023-07-23T07:00:00+00:00",
+      "minutes": 361
+    },
+    {
+      "market": "SOL-EUR",
+      "start_utc": "2023-07-23T00:58:00+00:00",
+      "end_utc": "2023-07-23T07:00:00+00:00",
+      "minutes": 362
+    },
+    {
+      "market": "XRP-EUR",
+      "start_utc": "2023-07-23T01:00:00+00:00",
+      "end_utc": "2023-07-23T07:00:00+00:00",
+      "minutes": 360
+    },
+    {
+      "market": "ADA-EUR",
+      "start_utc": "2023-07-23T00:59:00+00:00",
+      "end_utc": "2023-07-23T07:00:00+00:00",
+      "minutes": 361
+    }
+  ]
+}

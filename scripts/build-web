@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cargo build --locked -p tc-web --release --target wasm32-unknown-unknown
+required=$(python3 - <<'PY'
+import tomllib
+with open('Cargo.lock','rb') as f:
+    print(next(p['version'] for p in tomllib.load(f)['package'] if p['name']=='wasm-bindgen'))
+PY
+)
+if ! command -v wasm-bindgen >/dev/null || [[ "$(wasm-bindgen --version)" != "wasm-bindgen $required" ]]; then
+    echo "Install matching browser packaging tool: cargo install wasm-bindgen-cli --version $required --locked" >&2
+    exit 1
+fi
+mkdir -p dist/pkg
+wasm-bindgen --target web --out-dir dist/pkg target/wasm32-unknown-unknown/release/tc_web.wasm
+cp web/index.html web/app.css dist/

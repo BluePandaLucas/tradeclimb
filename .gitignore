@@ -1,0 +1,13 @@
+/target/
+**/target/
+__pycache__/
+*.pyc
+/var/
+/dist/
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+.venv*/

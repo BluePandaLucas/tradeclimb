@@ -1,0 +1,10 @@
+[package]
+name = "tc-example-strategy"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+[workspace]
+[dependencies]
+tc-sdk = { version = "0.1.0", path = "../../crates/tc-sdk" }
+anyhow = "1"
+rust_decimal = "1"
