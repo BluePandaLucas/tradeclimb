@@ -2,7 +2,7 @@
 
 Run the server on the same machine as the CLI. The HTTP API has no login and is intended for a trusted LAN. Code registration is a CLI operation; the HTTP API cannot upload or compile executable code. Browser mutations require an accepted Host and matching Origin. IP literals and localhost are accepted; configure `TC_ALLOWED_HOSTS=tradeclimb.home,tc.home` for explicit LAN hostnames. No permissive CORS headers are sent.
 
-The overview is also streamed as an SSE `snapshot` event every second at `/api/events`. Reconnecting receives a fresh snapshot. Curves are loaded for the selected run, not broadcast for every historic run. Overview snapshots show the latest 50 jobs; the CLI and job endpoint can retrieve an older known ID. SQLite retains the history.
+The overview is also streamed as an SSE `snapshot` event every second at `/api/events`. Reconnecting receives a fresh snapshot. Curves are loaded for the selected run, not broadcast for every historic run. Overview snapshots show the latest 50 jobs; the browser fetches `/api/jobs/index` once to search and paginate older summaries, then merges the live feed into that index. SQLite retains the history. The index excludes execution settings, curves, fills, and benchmarks.
 
 The `leaderboards` array compares completed runs across the full retained history, independently of the recent-job limit. Each group contains `id`, `campaign`, `period`, the exact `config`, and `entries`. A strategy version contributes its latest completed run by creation time (newest database row breaks timestamp ties). Entries with missing or non-finite net CAGR are excluded without falling back to an older run. Entries sort by net CAGR descending; exact ties share a competition rank (1, 1, 3), ordered by strategy ID. Each entry exposes `rank`, `strategy`, `job`, `created_at`, `net_cagr`, and `eligibility`. Archived versions remain ranked; eligibility does not filter rank. Validation uses only its permitted scalar CAGR and reports eligibility as `CAGR only`. Development and validation, different campaigns, and different execution settings never share a ranking.
 
@@ -11,6 +11,7 @@ The `leaderboards` array compares completed runs across the full retained histor
 | GET | `/api/overview` | Strategies, campaigns, recent jobs, leaderboards, paper sessions, datasets, tuning status, validation ledger |
 | GET | `/api/events` | SSE overview snapshots; validation includes no curves or granular progress |
 | POST | `/api/jobs` | Submit a registered strategy to a fixed campaign |
+| GET | `/api/jobs/index` | All lightweight run summaries, newest first; no chart payloads |
 | GET | `/api/jobs/{id}` | Run status and permitted results |
 | GET | `/api/jobs/{id}?days=7` | Development chart detail, resampled from full equity; also 30 or 90 days |
 | GET | `/api/jobs/{id}/trades?offset=0&limit=100` | Exact development fills; maximum page size 1,000 |

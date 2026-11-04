@@ -42,3 +42,17 @@ python3 -m venv .venv-qa
 ```
 
 Build the release CLI and browser assets first. The check runs Chromium headlessly against a temporary synthetic workspace, verifies streaming controls/charts/navigation and mobile width, and stops its server. No exchange orders are sent.
+
+
+For a large, isolated UI demo (4,800 additional versions, 2,000 navigation-only backtests, and 240 tuning runs):
+
+```bash
+./scripts/build-web
+cargo build --locked --release --bin tc
+python3 scripts/ui-demo.py
+./target/release/tc --data-dir var/ui-backlog serve --bind 127.0.0.1:8088 --assets dist
+```
+
+The seed command requires a fresh directory and never overwrites an existing workspace. All data is synthetic; backlog rows have no performance results. The original three demo evaluations run normally and provide inspectable charts. Open the strategy picker to search families and exact versions. New backtests wait behind “Show new runs” so the current page stays in place. Run `scripts/browser-backlog.py` with the optional Playwright environment to check growing backlogs, keyboard focus, old-run search, both themes, and mobile layout.
+
+The browser loads a lightweight run index once and keeps the live feed bounded to 50 runs. DOM pagination bounds rendering; the strategy and run indexes remain in browser memory, so very large workspaces beyond the tested thousands will eventually need server-side search/pagination.

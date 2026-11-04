@@ -82,6 +82,7 @@ fn routes(store: Store) -> Router {
         .route("/api/overview", get(overview))
         .route("/api/events", get(events))
         .route("/api/jobs", post(submit))
+        .route("/api/jobs/index", get(job_index))
         .route("/api/jobs/{id}/cancel", post(cancel))
         .route("/api/jobs/{id}", get(job))
         .route("/api/jobs/{id}/trades", get(trades))
@@ -233,8 +234,9 @@ async fn shutdown_signal() {
 }
 
 fn overview_value(store: &Store) -> Result<Value> {
+    let counts = store.db()?.query_row("SELECT COUNT(*), COALESCE(SUM(json_extract(data, '$.state') = 'completed'), 0), COALESCE(SUM(json_extract(data, '$.state') IN ('queued', 'preparing', 'running')), 0) FROM jobs", [], |row| Ok(json!({"total":row.get::<_,u64>(0)?,"completed":row.get::<_,u64>(1)?,"active":row.get::<_,u64>(2)?})))?;
     Ok(
-        json!({"leaderboards":leaderboard::groups(store)?,"strategies":store.objects::<RegisteredStrategy>("strategy")?,"campaigns":store.objects::<Campaign>("campaign")?,"jobs":store.jobs()?.into_iter().take(50).collect::<Vec<_>>(),"paper":store.objects::<PaperSession>("paper")?,"datasets":tc_data::list(&store.root)?,"validation":store.ledger()?,"tuning":store.objects::<Value>("tuning")?,"time":now()}),
+        json!({"job_counts":counts,"leaderboards":leaderboard::groups(store)?,"strategies":store.objects::<RegisteredStrategy>("strategy")?,"campaigns":store.objects::<Campaign>("campaign")?,"jobs":store.jobs()?.into_iter().take(50).collect::<Vec<_>>(),"paper":store.objects::<PaperSession>("paper")?,"datasets":tc_data::list(&store.root)?,"validation":store.ledger()?,"tuning":store.objects::<Value>("tuning")?,"time":now()}),
     )
 }
 async fn overview(State(app): State<Arc<App>>) -> Api<Value> {
@@ -253,6 +255,17 @@ async fn events(
             Ok(Event::default().event("snapshot").data(data))
         });
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+/// Lightweight history is fetched once by the browser; the live feed stays bounded.
+/// Execution settings, curves and fills are loaded only when a run is selected.
+async fn job_index(State(app): State<Arc<App>>) -> Api<Vec<Value>> {
+    let db = app.store.db()?;
+    let mut query = db.prepare("SELECT json_remove(data, '$.config', '$.result.equity', '$.result.fills', '$.result.benchmarks') FROM jobs ORDER BY rowid DESC")?;
+    let rows = query
+        .query_map([], |r| r.get::<_, String>(0))?
+        .map(|r| Ok(serde_json::from_str::<Value>(&r?)?))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Json(rows))
 }
 async fn submit(State(app): State<Arc<App>>, Json(input): Json<Submission>) -> Api<Job> {
     Ok(Json(app.store.submit(input)?))
@@ -586,6 +599,45 @@ mod tests {
         );
     }
     #[tokio::test]
+    async fn history_index_includes_old_runs_without_chart_payloads() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let db = store.db().unwrap();
+        for n in 0..650 {
+            let id = format!("job-{n}");
+            let data = json!({"id":id,"strategy":"s","config":{"large":"execution"},"result":{"metrics":{"net_cagr":0.1},"equity":[1,2],"fills":[3],"benchmarks":[4]}});
+            db.execute(
+                "INSERT INTO jobs VALUES(?1,?1,?1,?2)",
+                rusqlite::params![id, data.to_string()],
+            )
+            .unwrap();
+        }
+        let response = routes(store)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/jobs/index")
+                    .header("host", "localhost")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        let rows: Vec<Value> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(rows.len(), 650);
+        assert_eq!(rows[649]["id"], "job-0");
+        assert_eq!(rows[0]["result"]["metrics"]["net_cagr"], 0.1);
+        for row in rows {
+            assert!(row.get("config").is_none());
+            assert!(row["result"].get("equity").is_none());
+            assert!(row["result"].get("fills").is_none());
+            assert!(row["result"].get("benchmarks").is_none());
+        }
+    }
+    #[tokio::test]
     async fn validation_http_never_loads_local_detail_files() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
@@ -632,6 +684,7 @@ mod tests {
         for route in [
             format!("/api/jobs/{}?days=7", job.id),
             "/api/overview".into(),
+            "/api/jobs/index".into(),
         ] {
             let req = axum::http::Request::builder()
                 .uri(route)
