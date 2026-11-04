@@ -765,24 +765,29 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
     };
     let mut last = Instant::now() - Duration::from_secs(1);
     let mut trace = agent_api::TraceCollector::new(request.trace.clone());
-    let outcome = tc_engine::backtest_with_observer(
-        &relevant,
-        request.config,
-        strategy.as_mut(),
-        |index, total, sim| {
-            if last.elapsed() >= Duration::from_millis(500) {
-                if request.period == Period::Development {
-                    save_json(
-                        &directory.join("progress.json"),
-                        &json!({"progress":index as f64/total.max(1)as f64,"equity":sample(&sim.equity,1500)}),
-                    )?;
-                }
-                last = Instant::now();
+    let progress = |index: usize, total: usize, sim: &tc_engine::Simulator| {
+        if last.elapsed() >= Duration::from_millis(500) {
+            if request.period == Period::Development {
+                save_json(
+                    &directory.join("progress.json"),
+                    &json!({"progress":index as f64/total.max(1)as f64,"equity":sample(&sim.equity,1500)}),
+                )?;
             }
-            Ok(())
-        },
-        |frame, intents, sim, error| trace.observe(frame, intents, sim, error),
-    );
+            last = Instant::now();
+        }
+        Ok(())
+    };
+    let outcome = if request.trace.is_some() {
+        tc_engine::backtest_with_observer(
+            &relevant,
+            request.config,
+            strategy.as_mut(),
+            progress,
+            |frame, intents, sim, error| trace.observe(frame, intents, sim, error),
+        )
+    } else {
+        tc_engine::backtest(&relevant, request.config, strategy.as_mut(), progress)
+    };
     if request.period == Period::Development {
         trace.save(&directory.join("trace.json"))?;
         if let Err(error) = &outcome {

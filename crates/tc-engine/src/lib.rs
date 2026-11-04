@@ -28,16 +28,22 @@ pub struct Simulator {
 // Per-run constants; public Simulator methods still honor mutable configuration.
 #[derive(Clone, Copy)]
 struct ExecutionCosts {
-    slip: Decimal,
+    buy_multiplier: Decimal,
+    sell_multiplier: Decimal,
+    fee_multiplier: Decimal,
     fee: Decimal,
     haircut: Decimal,
 }
 impl ExecutionCosts {
     fn new(config: &RunConfig) -> Self {
         let denominator = Decimal::from(10_000);
+        let slip = Decimal::from(config.slippage_bps) / denominator;
+        let fee = Decimal::from(config.fee_bps) / denominator;
         Self {
-            slip: Decimal::from(config.slippage_bps) / denominator,
-            fee: Decimal::from(config.fee_bps) / denominator,
+            buy_multiplier: Decimal::ONE + slip,
+            sell_multiplier: Decimal::ONE - slip,
+            fee_multiplier: Decimal::ONE + fee,
+            fee,
             haircut: Decimal::ONE
                 - Decimal::from(config.fee_bps + config.slippage_bps) / denominator,
         }
@@ -86,6 +92,16 @@ impl Simulator {
                 .sum::<Decimal>()
     }
     pub fn queue(&mut self, intents: Vec<Intent>, time: i64) -> Result<()> {
+        self.validate_intents(&intents)?;
+        self.queue_validated(intents, time);
+        Ok(())
+    }
+    fn queue_borrowed(&mut self, intents: &[Intent], time: i64) -> Result<()> {
+        self.validate_intents(intents)?;
+        self.queue_validated(intents.iter().cloned(), time);
+        Ok(())
+    }
+    fn validate_intents(&self, intents: &[Intent]) -> Result<()> {
         ensure!(intents.len() <= 5, "too many intents");
         for (index, intent) in intents.iter().enumerate() {
             ensure!(
@@ -111,6 +127,9 @@ impl Simulator {
                 <= Decimal::ONE,
             "weights exceed portfolio capital"
         );
+        Ok(())
+    }
+    fn queue_validated(&mut self, intents: impl IntoIterator<Item = Intent>, time: i64) {
         for intent in intents {
             self.pending.retain(|p| p.intent.market != intent.market);
             if !self.halted || intent.target_weight == Decimal::ZERO {
@@ -120,7 +139,6 @@ impl Simulator {
                 });
             }
         }
-        Ok(())
     }
     pub fn execute(
         &mut self,
@@ -137,8 +155,10 @@ impl Simulator {
             target,
             reason,
             ExecutionCosts::new(&self.config),
+            &mut None,
         )
     }
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn execute_with_costs(
         &mut self,
@@ -148,6 +168,7 @@ impl Simulator {
         target: Decimal,
         reason: &str,
         costs: ExecutionCosts,
+        gross_equity: &mut Option<Decimal>,
     ) -> Result<()> {
         ensure!(price > Decimal::ZERO, "nonpositive execution price");
         let rule = self
@@ -161,31 +182,53 @@ impl Simulator {
             .positions
             .get(market)
             .map_or(Decimal::ZERO, |p| p.quantity);
+        if (self.halted || target == Decimal::ZERO) && held == Decimal::ZERO {
+            return Ok(());
+        }
         let desired = if self.halted || target == Decimal::ZERO {
             Decimal::ZERO
         } else {
-            self.gross_equity() * target / price
+            *gross_equity.get_or_insert_with(|| self.gross_equity()) * target / price
         };
         let delta = desired - held;
-        let slip = costs.slip;
         let fee_rate = costs.fee;
         let (side, fill_price, quantity) = if delta > Decimal::ZERO {
-            let p = price * (Decimal::ONE + slip);
+            let p = price * costs.buy_multiplier;
+            // Cash limits and rounding toward zero only reduce the requested
+            // quantity. Its unrounded notional is a conservative upper bound.
+            if reason != "terminal"
+                && reason != "risk"
+                && delta
+                    .checked_mul(p)
+                    .is_some_and(|notional| notional < rule.minimum_eur)
+            {
+                return Ok(());
+            }
             (
                 Side::Buy,
                 p,
                 delta
-                    .min(self.portfolio.cash / (p * (Decimal::ONE + fee_rate)))
+                    .min(self.portfolio.cash / (p * costs.fee_multiplier))
                     .round_dp_with_strategy(
                         rule.quantity_decimals,
                         rust_decimal::RoundingStrategy::ToZero,
                     ),
             )
         } else {
+            let p = price * costs.sell_multiplier;
+            let requested = (-delta).min(held);
+            if reason != "terminal"
+                && reason != "risk"
+                && requested
+                    .checked_mul(p)
+                    .is_some_and(|notional| notional < rule.minimum_eur)
+            {
+                return Ok(());
+            }
             (
                 Side::Sell,
-                price * (Decimal::ONE - slip),
-                (-delta).min(held).round_dp_with_strategy(
+                p,
+                requested.round_dp_with_strategy(
                     rule.quantity_decimals,
                     rust_decimal::RoundingStrategy::ToZero,
                 ),
@@ -227,6 +270,8 @@ impl Simulator {
                 }
             }
         }
+        // Portfolio changed: later orders must value the updated cash/holdings.
+        *gross_equity = None;
         self.fills.push(Fill {
             time,
             market: market.into(),
@@ -260,19 +305,25 @@ impl Simulator {
         // sells before buys and preserves the order of unready intents.
         let mut pending = std::mem::take(&mut self.pending);
         pending.retain(|p| time - p.created <= self.config.intent_ttl_ms);
-        let priority = |p: &Pending| {
+        let mut sells = 0;
+        let mut ready = 0;
+        for index in 0..pending.len() {
+            let p = &pending[index];
             if time >= p.created
                 && candles
                     .iter()
                     .any(|c| c.market == p.intent.market && c.volume > Decimal::ZERO)
             {
-                u8::from(p.intent.target_weight > Decimal::ZERO)
-            } else {
-                2
+                let selling = p.intent.target_weight == Decimal::ZERO;
+                let insert = if selling { sells } else { ready };
+                // Stable insertion partitions the small intent list with one
+                // readiness lookup per intent, rather than per sort comparison.
+                pending[insert..=index].rotate_right(1);
+                sells += usize::from(selling);
+                ready += 1;
             }
-        };
-        pending.sort_by_key(&priority);
-        let ready = pending.iter().take_while(|p| priority(p) < 2).count();
+        }
+        let mut gross_equity = None;
         let result = (|| {
             for p in &pending[..ready] {
                 if let Some(c) = candles.iter().find(|c| c.market == p.intent.market) {
@@ -283,6 +334,7 @@ impl Simulator {
                         p.intent.target_weight,
                         if self.halted { "risk" } else { "signal" },
                         costs,
+                        &mut gross_equity,
                     )?;
                 }
             }
@@ -390,7 +442,7 @@ pub fn backtest(
     strategy: &mut dyn Strategy,
     mut progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
 ) -> Result<Report> {
-    backtest_with_observer(
+    backtest_impl::<false>(
         candles,
         config,
         strategy,
@@ -417,8 +469,23 @@ pub fn backtest_with_observer(
     mut progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
     mut observer: impl FnMut(&Frame, &[Intent], &Simulator, Option<&str>) -> Result<()>,
 ) -> Result<Report> {
+    backtest_impl::<true>(candles, config, strategy, &mut progress, &mut observer)
+}
+fn backtest_impl<const OBSERVE: bool>(
+    candles: &[Candle],
+    config: RunConfig,
+    strategy: &mut dyn Strategy,
+    mut progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
+    mut observer: impl FnMut(&Frame, &[Intent], &Simulator, Option<&str>) -> Result<()>,
+) -> Result<Report> {
     let mut sim = Simulator::new(config)?;
     let costs = ExecutionCosts::new(&sim.config);
+    // A conservative five-market estimate avoids repeated equity-buffer growth.
+    let estimated_frames = candles
+        .len()
+        .div_ceil(MARKETS.len())
+        .min(((sim.config.end - sim.config.start) / MINUTE) as usize);
+    sim.equity.reserve(estimated_frames);
     let mut index = 0;
     let mut previous = None;
     let mut frame = Frame {
@@ -440,20 +507,16 @@ pub fn backtest_with_observer(
                 .take_while(|c| c.time == time)
                 .count();
         let group = &candles[index..end];
-        for c in group {
-            c.validate()?;
-        }
-        // Validated candles can only contain the five supported markets.
         let mut seen = 0_u8;
+        let mut duplicate = false;
         for c in group {
-            let market = MARKETS
-                .iter()
-                .position(|m| *m == c.market)
-                .ok_or_else(|| anyhow::anyhow!("unsupported market"))?;
+            let market = c.validated_market_index()?;
             let bit = 1 << market;
-            ensure!(seen & bit == 0, "duplicate candle");
+            duplicate |= seen & bit != 0;
             seen |= bit;
         }
+        // Complete field validation precedes duplicate errors, as in the public API.
+        ensure!(!duplicate, "duplicate candle");
         if time >= sim.config.end {
             break;
         }
@@ -464,23 +527,31 @@ pub fn backtest_with_observer(
         }
         frame.time = time + MINUTE;
         group.clone_into(&mut frame.candles);
-        frame.portfolio.cash = sim.portfolio.cash;
-        frame
-            .portfolio
-            .positions
-            .retain(|market, _| sim.portfolio.positions.contains_key(market));
-        for (market, position) in &sim.portfolio.positions {
-            if let Some(cached) = frame.portfolio.positions.get_mut(market) {
-                cached.clone_from(position);
-            } else {
-                frame
-                    .portfolio
-                    .positions
-                    .insert(market.clone(), position.clone());
+        if OBSERVE {
+            frame.portfolio.cash = sim.portfolio.cash;
+            // Simulator keeps zero-quantity positions; keys only accumulate during
+            // a backtest, so cached frame positions never need to be removed.
+            for (market, position) in &sim.portfolio.positions {
+                if let Some(cached) = frame.portfolio.positions.get_mut(market) {
+                    cached.clone_from(position);
+                } else {
+                    frame
+                        .portfolio
+                        .positions
+                        .insert(market.clone(), position.clone());
+                }
             }
+        } else {
+            // With no observer, lend the portfolio to the strategy's frame and
+            // restore it immediately after the callback, avoiding a snapshot.
+            std::mem::swap(&mut frame.portfolio, &mut sim.portfolio);
         }
         frame.warmup = warmup;
-        let intents = match strategy.on_frame(&frame) {
+        let decision = strategy.on_frame(&frame);
+        if !OBSERVE {
+            std::mem::swap(&mut frame.portfolio, &mut sim.portfolio);
+        }
+        let intents = match decision {
             Ok(v) => v,
             Err(error) => {
                 let message = error.to_string();
@@ -488,16 +559,26 @@ pub fn backtest_with_observer(
                 return Err(error);
             }
         };
-        if !warmup && let Err(error) = sim.queue(intents.clone(), time + MINUTE) {
-            let message = error.to_string();
-            observer(&frame, &intents, &sim, Some(&message))?;
-            return Err(ExecutionFailure {
-                code: "invalid_intent",
-                message,
+        if !OBSERVE && !warmup {
+            // No observation needs the decision after admission: move its owned
+            // strings into the pending queue instead of cloning them.
+            sim.queue(intents, time + MINUTE)
+                .map_err(|error| ExecutionFailure {
+                    code: "invalid_intent",
+                    message: error.to_string(),
+                })?;
+        } else {
+            if !warmup && let Err(error) = sim.queue_borrowed(&intents, time + MINUTE) {
+                let message = error.to_string();
+                observer(&frame, &intents, &sim, Some(&message))?;
+                return Err(ExecutionFailure {
+                    code: "invalid_intent",
+                    message,
+                }
+                .into());
             }
-            .into());
+            observer(&frame, &intents, &sim, None)?;
         }
-        observer(&frame, &intents, &sim, None)?;
         if index % 2_000 < group.len() {
             progress(index, candles.len(), &sim)?;
         }
@@ -1003,6 +1084,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(observed, expected_frames);
+        let plain = backtest(
+            &data,
+            expected.config.clone(),
+            &mut tc_sdk::Builtin::new(&spec).unwrap(),
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(plain).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
         assert_eq!(
             serde_json::to_value(actual).unwrap(),
             serde_json::to_value(expected).unwrap()
@@ -1076,6 +1168,112 @@ mod tests {
         sim.config.fee_bps = 100;
         let equity = sim.liquidation_equity();
         assert_eq!(equity, Decimal::from(9900));
+    }
+    #[test]
+    fn batch_valuation_cache_matches_independent_order_execution() {
+        let mut config = RunConfig::new(0, 40 * MINUTE);
+        config.fee_bps = 37;
+        config.slippage_bps = 19;
+        config.max_drawdown = 1.0;
+        let mut batch = Simulator::new(config).unwrap();
+        let mut independent = batch.clone();
+        for minute in 0..30 {
+            let time = minute * MINUTE;
+            let group: Vec<_> = MARKETS
+                .iter()
+                .enumerate()
+                .map(|(i, market)| {
+                    let mut c = candle(time, 100 + minute % (i as i64 + 3));
+                    c.market = (*market).into();
+                    c
+                })
+                .collect();
+            batch.open(&group, time).unwrap();
+            for c in &group {
+                if let Some(p) = independent.portfolio.positions.get_mut(&c.market) {
+                    p.price = c.open;
+                    p.observed_at = time;
+                }
+            }
+            let mut pending = std::mem::take(&mut independent.pending);
+            pending.sort_by_key(|p| p.intent.target_weight > Decimal::ZERO);
+            for p in pending {
+                let c = group.iter().find(|c| c.market == p.intent.market).unwrap();
+                independent
+                    .execute(
+                        &p.intent.market,
+                        c.open,
+                        time,
+                        p.intent.target_weight,
+                        "signal",
+                    )
+                    .unwrap();
+            }
+            batch.mark(&group, time + MINUTE).unwrap();
+            independent.mark(&group, time + MINUTE).unwrap();
+            let intents: Vec<_> = MARKETS
+                .iter()
+                .enumerate()
+                .map(|(i, market)| Intent {
+                    market: (*market).into(),
+                    target_weight: if (minute + i as i64) % 11 < 3 {
+                        Decimal::ZERO
+                    } else {
+                        Decimal::new(2, 1)
+                    },
+                })
+                .collect();
+            batch.queue(intents.clone(), time + MINUTE).unwrap();
+            independent.queue(intents, time + MINUTE).unwrap();
+            assert_eq!(
+                serde_json::to_value(&batch).unwrap(),
+                serde_json::to_value(&independent).unwrap()
+            );
+        }
+    }
+    #[test]
+    fn minimum_notional_shortcuts_preserve_boundary_and_forced_fills() {
+        for (weight, expected_fills) in [
+            (Decimal::new(49999, 7), 0),
+            (Decimal::new(5, 3), 1),
+            (Decimal::new(50001, 7), 1),
+        ] {
+            let mut config = RunConfig::new(0, MINUTE);
+            config.capital = 1000.into();
+            config.fee_bps = 0;
+            config.slippage_bps = 0;
+            let mut sim = Simulator::new(config).unwrap();
+            sim.execute("BTC-EUR", 100.into(), 0, weight, "signal")
+                .unwrap();
+            assert_eq!(sim.fills.len(), expected_fills);
+        }
+        for reason in ["signal", "terminal", "risk"] {
+            let mut config = RunConfig::new(0, MINUTE);
+            config.fee_bps = 0;
+            config.slippage_bps = 0;
+            let mut sim = Simulator::new(config).unwrap();
+            sim.portfolio.positions.insert(
+                "BTC-EUR".into(),
+                Position {
+                    quantity: Decimal::new(1, 2),
+                    price: 100.into(),
+                    observed_at: 0,
+                },
+            );
+            sim.execute("BTC-EUR", 100.into(), 0, Decimal::ZERO, reason)
+                .unwrap();
+            assert_eq!(sim.fills.len(), usize::from(reason != "signal"));
+        }
+    }
+    #[test]
+    fn overflowing_notional_bound_falls_back_to_cash_limited_execution() {
+        let mut config = RunConfig::new(0, MINUTE);
+        config.capital = Decimal::MAX;
+        let mut sim = Simulator::new(config).unwrap();
+        assert!(
+            sim.execute("BTC-EUR", Decimal::ONE, 0, Decimal::ONE, "signal")
+                .is_ok()
+        );
     }
     #[test]
     fn fees_are_exact_and_signal_fills_next_bar() {

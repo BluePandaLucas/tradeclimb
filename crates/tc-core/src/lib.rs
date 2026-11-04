@@ -18,8 +18,39 @@ pub fn require(ok: bool, message: &str) -> Result<(), ContractError> {
         Err(ContractError(message.into()))
     }
 }
+#[inline]
 pub fn number(value: Decimal) -> f64 {
-    value.to_f64().unwrap_or(0.0)
+    // Match Decimal::to_f64's integral/fractional conversion and rounding, but
+    // avoid wide integer division and dynamic powers for small market prices.
+    const POWERS: [u32; 10] = [
+        1,
+        10,
+        100,
+        1_000,
+        10_000,
+        100_000,
+        1_000_000,
+        10_000_000,
+        100_000_000,
+        1_000_000_000,
+    ];
+    let parts = value.unpack();
+    if parts.hi == 0
+        && parts.mid == 0
+        && parts.scale > 0
+        && let Some(&power) = POWERS.get(parts.scale as usize)
+    {
+        let integral = (parts.lo / power) as f64;
+        let fraction = (parts.lo % power) as f64 / power as f64;
+        let result = if fraction == 0.0 {
+            integral
+        } else {
+            ((integral + fraction) * power as f64).round() / power as f64
+        };
+        if parts.negative { -result } else { result }
+    } else {
+        value.to_f64().unwrap_or(0.0)
+    }
 }
 pub fn timestamp(text: &str) -> Result<i64, ContractError> {
     let value = if text.len() == 10 {
@@ -35,7 +66,7 @@ pub fn now() -> i64 {
     Utc::now().timestamp_millis()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Candle {
     pub market: String,
     pub time: i64,
@@ -45,12 +76,39 @@ pub struct Candle {
     pub close: Decimal,
     pub volume: Decimal,
 }
+impl Clone for Candle {
+    fn clone(&self) -> Self {
+        Self {
+            market: self.market.clone(),
+            time: self.time,
+            open: self.open,
+            high: self.high,
+            low: self.low,
+            close: self.close,
+            volume: self.volume,
+        }
+    }
+    fn clone_from(&mut self, source: &Self) {
+        // Vec::clone_from can retain candle and market-string storage per frame.
+        self.market.clone_from(&source.market);
+        self.time = source.time;
+        self.open = source.open;
+        self.high = source.high;
+        self.low = source.low;
+        self.close = source.close;
+        self.volume = source.volume;
+    }
+}
 impl Candle {
     pub fn validate(&self) -> Result<(), ContractError> {
-        require(
-            MARKETS.contains(&self.market.as_str()),
-            "unsupported market",
-        )?;
+        self.validated_market_index().map(|_| ())
+    }
+    /// Validate all fields and return the index in MARKETS for frame grouping.
+    pub fn validated_market_index(&self) -> Result<usize, ContractError> {
+        let market = MARKETS
+            .iter()
+            .position(|m| *m == self.market)
+            .ok_or_else(|| ContractError("unsupported market".into()))?;
         require(
             self.time >= 0 && self.time % MINUTE == 0,
             "unaligned candle timestamp",
@@ -64,7 +122,8 @@ impl Candle {
                 && self.close <= self.high
                 && self.volume >= Decimal::ZERO,
             "invalid OHLCV",
-        )
+        )?;
+        Ok(market)
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -382,5 +441,60 @@ mod tests {
         assert_eq!(sampled[0].time, 0);
         assert_eq!(sampled.last().unwrap().time, 9999);
         assert!(sampled.iter().any(|p| p.time == 4321));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod conversion_regressions {
+    use super::*;
+
+    #[test]
+    fn small_decimal_conversion_matches_library_bit_for_bit() {
+        let mut state = 123456789_u32;
+        for scale in 0..=28 {
+            for negative in [false, true] {
+                for lo in [0, 1, 9, 10, 99, 100, 999_999_999, u32::MAX] {
+                    for (mid, hi) in [(0, 0), (1, 0), (u32::MAX, u32::MAX)] {
+                        let value = Decimal::from_parts(lo, mid, hi, negative, scale);
+                        assert_eq!(
+                            number(value).to_bits(),
+                            value.to_f64().unwrap().to_bits(),
+                            "{value}"
+                        );
+                    }
+                }
+                for _ in 0..2000 {
+                    state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let value = Decimal::from_parts(state, 0, 0, negative, scale);
+                    assert_eq!(
+                        number(value).to_bits(),
+                        value.to_f64().unwrap().to_bits(),
+                        "{value}"
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn candle_clone_from_preserves_all_fields_and_reuses_market_storage() {
+        let source = Candle {
+            market: "BTC-EUR".into(),
+            time: MINUTE,
+            open: 10.into(),
+            high: 12.into(),
+            low: 9.into(),
+            close: 11.into(),
+            volume: 3.into(),
+        };
+        let mut destination = source.clone();
+        destination.market = String::with_capacity(32);
+        destination.market.push_str("SOL-EUR");
+        destination.time = 0;
+        destination.close = 1.into();
+        let storage = destination.market.as_ptr();
+        destination.clone_from(&source);
+        assert_eq!(destination, source);
+        assert_eq!(storage, destination.market.as_ptr());
     }
 }
