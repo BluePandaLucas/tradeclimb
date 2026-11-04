@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import signal
 import socket
 import sqlite3
@@ -63,7 +64,9 @@ def sandbox_scopes():
 with tempfile.TemporaryDirectory(prefix="tc-agent-tools-") as folder:
     root = pathlib.Path(folder)
     data = root / "data"
-    binary = ROOT / "target/release/tc"
+    # Pin the tested executable while another checkout/build may replace target/.
+    binary = root / "tc"
+    shutil.copy2(ROOT / "target/release/tc", binary)
 
     def cli(*arguments):
         result = subprocess.run(
@@ -147,10 +150,16 @@ with tempfile.TemporaryDirectory(prefix="tc-agent-tools-") as folder:
         caps = client.request("/api/agent/capabilities")
         assert caps["objective"] == "sharpe_daily_v1"
         assert caps["limits"]["trace_frames"] == 512
+        assert caps["models"]["max_unique_calls_per_run"] == 64
         project = root / "project"
         kit = client.initialize(project)
         assert kit["platform"] == caps["platform"]
         assert (project / "sdk/crates/tc-sdk/src/lib.rs").is_file()
+        for name, count in [("regular", 450), ("gapped", 410)]:
+            fixture = json.loads((project / "fixtures" / f"{name}.json").read_text())
+            assert (
+                len(fixture["candles"]) == count and not fixture["performance_evidence"]
+            )
         source = (project / "src/main.rs").read_text()
         link = project / "src/leak.rs"
         link.symlink_to(keyfile)
@@ -432,6 +441,16 @@ with tempfile.TemporaryDirectory(prefix="tc-agent-tools-") as folder:
             )
         budget = cli("budget")
         assert budget["used"] == 0 and not budget["revealed"]
+        # A failed spawn must finish visibly and leave the queue operational.
+        # Linux current_exe now resolves to a nonexistent '(deleted)' path.
+        binary.unlink()
+        for index in range(2):
+            attempt = client.submit(project, f"Launch failure {index}")
+            failed = client.wait("candidate", attempt["id"], seconds=10)
+            assert (
+                failed["state"] == "failed"
+                and failed["diagnostic"]["code"] == "worker_interrupted"
+            ), failed
         print(
             "PASS: pinned kit, offline builds, preflight, lineage, dev data/traces, useful failures, isolation, cancellation/revocation/restart; validation/final untouched"
         )
