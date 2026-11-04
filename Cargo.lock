@@ -2740,6 +2740,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "sha2",
  "tc-core",
  "tc-sandbox",
  "tc-sdk",
