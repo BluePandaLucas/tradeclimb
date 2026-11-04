@@ -375,12 +375,12 @@ pub fn backtest(
 }
 /// Use complete UTC days only. Missing day boundaries invalidate the series;
 /// never fabricate valuations across data gaps. Keep idle/cash days in the sample.
-fn daily_sharpe(points: &[EquityPoint], start: i64, end: i64) -> (Option<f64>, usize) {
+fn daily_returns(points: &[EquityPoint], start: i64, end: i64) -> Option<Vec<f64>> {
     const DAY: i64 = 86_400_000;
     let first = start.div_euclid(DAY) * DAY + if start.rem_euclid(DAY) == 0 { 0 } else { DAY };
     let last = end.div_euclid(DAY) * DAY;
     if last <= first {
-        return (None, 0);
+        return None;
     }
     let mut boundaries = BTreeMap::new();
     for p in points {
@@ -394,25 +394,82 @@ fn daily_sharpe(points: &[EquityPoint], start: i64, end: i64) -> (Option<f64>, u
     while time < last {
         let (Some(&before), Some(&after)) = (boundaries.get(&time), boundaries.get(&(time + DAY)))
         else {
-            return (None, 0);
+            return None;
         };
         if !before.is_finite() || !after.is_finite() || before <= 0.0 || after <= 0.0 {
-            return (None, 0);
+            return None;
         }
         returns.push(after / before - 1.0);
         time += DAY;
     }
+    Some(returns)
+}
+fn daily_sharpe(points: &[EquityPoint], start: i64, end: i64) -> (Option<f64>, usize) {
+    let Some(returns) = daily_returns(points, start, end) else {
+        return (None, 0);
+    };
+    (daily_ratio(&returns), returns.len())
+}
+fn daily_ratio(returns: &[f64]) -> Option<f64> {
+    ratio_with_variance_floor(returns, f64::EPSILON * f64::EPSILON)
+}
+fn ratio_with_variance_floor(returns: &[f64], floor: f64) -> Option<f64> {
     let n = returns.len();
     if n < 2 {
-        return (None, n);
+        return None;
     }
     let mean = returns.iter().sum::<f64>() / n as f64;
     let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
-    if variance <= f64::EPSILON * f64::EPSILON {
-        return (None, n);
+    if variance <= floor {
+        return None;
     }
     let sharpe = mean / variance.sqrt() * 365.25_f64.sqrt();
-    (sharpe.is_finite().then_some(sharpe), n)
+    sharpe.is_finite().then_some(sharpe)
+}
+/// Benchmark-relative diagnostics; never divide two Sharpe ratios.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BenchmarkComparison {
+    pub version: String,
+    pub strategy_sharpe: Option<f64>,
+    pub benchmark_sharpe: Option<f64>,
+    pub sharpe_difference: Option<f64>,
+    pub information_ratio: Option<f64>,
+    pub paired_days: usize,
+    pub net_return_difference: f64,
+    pub cagr_difference: Option<f64>,
+}
+pub fn compare_benchmark(strategy: &Report, benchmark: &Report) -> Result<BenchmarkComparison> {
+    ensure!(
+        strategy.config.start == benchmark.config.start
+            && strategy.config.end == benchmark.config.end,
+        "benchmark comparison requires identical evaluation dates"
+    );
+    let (start, end) = (strategy.config.start, strategy.config.end);
+    let p = daily_returns(&strategy.equity, start, end);
+    let b = daily_returns(&benchmark.equity, start, end);
+    let (ps, _) = daily_sharpe(&strategy.equity, start, end);
+    let (bs, _) = daily_sharpe(&benchmark.equity, start, end);
+    let (information_ratio, paired_days) = match (p, b) {
+        (Some(p), Some(b)) if p.len() == b.len() => {
+            let active: Vec<_> = p.iter().zip(&b).map(|(p, b)| p - b).collect();
+            (ratio_with_variance_floor(&active, 1e-24), active.len())
+        }
+        _ => (None, 0),
+    };
+    Ok(BenchmarkComparison {
+        version: "buy_hold_comparison_daily_v1".into(),
+        strategy_sharpe: ps,
+        benchmark_sharpe: bs,
+        sharpe_difference: ps.zip(bs).map(|(p, b)| p - b),
+        information_ratio,
+        paired_days,
+        net_return_difference: strategy.metrics.net_return - benchmark.metrics.net_return,
+        cagr_difference: strategy
+            .metrics
+            .net_cagr
+            .zip(benchmark.metrics.net_cagr)
+            .map(|(p, b)| p - b),
+    })
 }
 fn metrics(sim: &Simulator) -> Result<Metrics> {
     let start = number(sim.config.capital);
@@ -824,5 +881,67 @@ mod accounting_regressions {
         };
         sim.open(&[c], 10 * MINUTE).unwrap();
         assert!(sim.fills.is_empty());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod benchmark_tests {
+    use super::*;
+    fn report(returns: &[f64]) -> Report {
+        let day = 1440 * MINUTE;
+        let mut report = Simulator::new(RunConfig::new(0, returns.len() as i64 * day))
+            .unwrap()
+            .finish()
+            .unwrap();
+        let mut equity = 10_000.0;
+        report.equity = vec![EquityPoint {
+            time: 0,
+            equity,
+            drawdown: 0.0,
+        }];
+        for (i, r) in returns.iter().enumerate() {
+            equity *= 1.0 + r;
+            report.equity.push(EquityPoint {
+                time: (i + 1) as i64 * day,
+                equity,
+                drawdown: 0.0,
+            });
+        }
+        report.metrics.net_return = equity / 10_000.0 - 1.0;
+        report
+    }
+    #[test]
+    fn information_ratio_uses_paired_daily_active_returns() {
+        let p = report(&[0.02, 0.01, 0.06]);
+        let b = report(&[0.01, 0.02, 0.03]);
+        let c = compare_benchmark(&p, &b).unwrap();
+        assert_eq!(c.paired_days, 3);
+        assert!((c.information_ratio.unwrap() - 0.5 * 365.25_f64.sqrt()).abs() < 1e-10);
+        assert!(
+            (c.sharpe_difference.unwrap()
+                - (c.strategy_sharpe.unwrap() - c.benchmark_sharpe.unwrap()))
+            .abs()
+                < 1e-12
+        );
+        assert!(
+            (c.net_return_difference - (1.02 * 1.01 * 1.06 - 1.01 * 1.02 * 1.03)).abs() < 1e-12
+        );
+    }
+    #[test]
+    fn missing_boundaries_and_zero_tracking_error_never_fabricate_scores() {
+        let constant = compare_benchmark(&report(&[0.02; 3]), &report(&[0.01; 3])).unwrap();
+        assert!(constant.information_ratio.is_none());
+        let p = report(&[0.02, 0.01, 0.06]);
+        let mut b = p.clone();
+        let c = compare_benchmark(&p, &b).unwrap();
+        assert!(c.information_ratio.is_none());
+        assert_eq!(c.paired_days, 3);
+        b.equity.remove(1);
+        let c = compare_benchmark(&p, &b).unwrap();
+        assert!(c.information_ratio.is_none());
+        assert_eq!(c.paired_days, 0);
+        b.config.end += MINUTE;
+        assert!(compare_benchmark(&p, &b).is_err());
     }
 }

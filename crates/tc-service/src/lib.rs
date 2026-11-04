@@ -2,6 +2,7 @@
 pub mod auth;
 mod broker;
 mod build;
+mod comparison;
 mod evaluation;
 mod http;
 mod inference;
@@ -29,6 +30,9 @@ use tc_data::{digest, read_json, save_json};
 #[derive(Clone)]
 pub struct Store {
     pub root: PathBuf,
+    // Shared by owner and agent HTTP transports; native detail/reference work
+    // can load an entire dataset and must remain bounded outside worker jobs.
+    report_slots: std::sync::Arc<tokio::sync::Semaphore>,
     pub shutdown: std::sync::Arc<std::sync::atomic::AtomicBool>,
     paper_controls: std::sync::Arc<
         std::sync::Mutex<std::collections::BTreeMap<String, std::sync::Arc<paper::PaperControl>>>,
@@ -165,6 +169,7 @@ impl Store {
         }
         let store = Self {
             root,
+            report_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             shutdown: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             paper_controls: Default::default(),
         };
@@ -539,6 +544,7 @@ impl Store {
         let j = self.job(id)?;
         ensure_research_window(j.config.start, j.config.end)?;
         if j.period == Period::Validation {
+            self.put("validation_reveal", id, &json!({"time":now(),"job":id}))?;
             self.db()?
                 .execute("UPDATE ledger SET revealed=1 WHERE id=1", [])?;
             self.put(
@@ -748,32 +754,7 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
         json!({request.objective.metric():metrics[request.objective.metric()]})
     } else {
         let mut value = serde_json::to_value(RunView::from_report(&report))?;
-        let mut benchmarks = vec![];
-        for (name, markets) in [
-            ("BTC buy & hold", vec!["BTC-EUR".to_string()]),
-            (
-                "Five-asset buy & hold",
-                MARKETS.iter().map(|m| (*m).to_string()).collect(),
-            ),
-        ] {
-            let spec = StrategySpec {
-                parameters: Default::default(),
-                name: name.into(),
-                description: "Cost-matched unlevered buy-and-hold reference".into(),
-                kind: StrategyKind::BuyHold,
-                markets,
-            };
-            let mut config = report.config.clone();
-            config.max_drawdown = 1.0;
-            let benchmark = tc_engine::backtest(
-                &relevant,
-                config,
-                &mut tc_sdk::Builtin::new(&spec)?,
-                |_, _, _| Ok(()),
-            )?;
-            benchmarks.push(json!({"name":name,"equity":sample(&benchmark.equity,1500),"net_cagr":benchmark.metrics.net_cagr,"max_drawdown":benchmark.metrics.max_drawdown}));
-        }
-        value["benchmarks"] = json!(benchmarks);
+        value["benchmarks"] = json!(comparison::benchmarks(&relevant, &report)?);
         value
     };
     save_json(&directory.join("result.json"), &result)?;

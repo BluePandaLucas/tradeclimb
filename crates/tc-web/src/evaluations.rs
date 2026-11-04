@@ -276,6 +276,50 @@ pub fn Evaluations(
         </section>
     }
 }
+fn reveal_validation(
+    id: String,
+    detail: RwSignal<Value>,
+    status: RwSignal<String>,
+    pending: RwSignal<bool>,
+    chart_days: RwSignal<i64>,
+) {
+    if pending.get_untracked() {
+        return;
+    }
+    pending.set(true);
+    status.set("Opening owner validation details…".into());
+    spawn_local(async move {
+        let result = async {
+            let response = Request::post(&format!("/api/jobs/{id}/reveal"))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            if response.status() == 401 {
+                sign_in();
+                return Err("Sign in again".into());
+            }
+            let value: Value = response.json().await.map_err(|e| e.to_string())?;
+            if !response.ok() {
+                return Err(text(&value, "error"));
+            }
+            detail.set(value);
+            chart_days.set(0);
+            Ok(())
+        }
+        .await;
+        status.set(match result {
+            Ok(()) => "Validation revealed to owner; agents remain restricted.".into(),
+            Err(e) => e,
+        });
+        pending.set(false);
+    });
+}
+#[component]
+fn BenchmarkTable(benchmarks: Vec<Value>) -> impl IntoView {
+    view! {<section class="benchmark-comparison"><h3>"Against buy-and-hold · full run"</h3><p class="muted">"Five-asset basket is the fixed reference; BTC is a secondary comparison. Information ratio (IR) compares average daily outperformance with its variability. References remain invested through drawdowns."</p>
+    <div class="table-scroll"><table><thead><tr><th>"REFERENCE"</th><th>"SHARPE"</th><th>"SHARPE DIFFERENCE"</th><th>"INFORMATION RATIO"</th><th>"RETURN DIFFERENCE"</th></tr></thead><tbody>{benchmarks.into_iter().map(|b|{let c=&b["comparison"];view!{<tr><td>{text(&b,"name")}</td><td>{score_value(&json!({"objective":"sharpe_daily_v1"}),&c["benchmark_sharpe"])}</td><td>{score_value(&json!({"objective":"sharpe_daily_v1"}),&c["sharpe_difference"])}</td><td>{score_value(&json!({"objective":"sharpe_daily_v1"}),&c["information_ratio"])}</td><td>{format!("{} pp",percent(&c["net_return_difference"]).trim_end_matches('%'))}</td></tr>}}).collect_view()}</tbody></table></div>
+    <p class="chart-note">"Daily UTC returns, annualized; undefined ratios show —. Return differences are percentage points. Comparisons do not change the campaign ranking or risk eligibility."</p></section>}
+}
 #[component]
 pub fn RunDetail(
     snapshot: RwSignal<Value>,
@@ -286,7 +330,8 @@ pub fn RunDetail(
     show_basket: RwSignal<bool>,
     tuning_pending: RwSignal<bool>,
 ) -> impl IntoView {
+    let reveal_pending = RwSignal::new(false);
     view! {
-    {move||{let job=detail.get(); if job.is_null() {return ().into_any();} let validation=job["period"]=="validation";let result=&job["result"];let metric=&result["metrics"];view!{<section class="panel run-detail"><div class="panel-heading"><div><h2>"Run details"</h2><p>{format!("{} → {} · EUR · {} bps fee + {} bps adverse allowance per fill",date(&job["config"]["start"]),date(&job["config"]["end"]),job["config"]["fee_bps"],job["config"]["slippage_bps"])}</p></div><code>{short(&text(&job,"id"))}</code></div>{if validation{view!{<div class="empty"><h3>{job_score(&job)}</h3><p>"Validation detail is withheld. Explicit local owner inspection marks validation as revealed."</p></div>}.into_any()}else{let benches=items(result,"benchmarks").into_iter().filter(|b|if text(b,"name").starts_with("BTC"){show_btc.get()}else{show_basket.get()}).collect::<Vec<_>>();let equity=items(result,"equity");let fills=items(result,"fills");let id=text(&job,"id");view!{<div class="detail-metrics"><div>"SHARPE"<strong>{score_value(&json!({"objective":"sharpe_daily_v1"}),&metric["sharpe"])}</strong></div><div>"NET CAGR"<strong>{percent(&metric["net_cagr"])}</strong></div><div>"NET RETURN"<strong>{percent(&metric["net_return"])}</strong></div><div>"FEES"<strong>{metric["total_fees"].as_str().and_then(|s|s.parse::<f64>().ok()).map(money).unwrap_or("—".into())}</strong></div><div>"FILLS"<strong>{metric["trades"].to_string()}</strong></div><div>"MEAN MONTH"<strong>{percent(&metric["mean_monthly_return"])}</strong></div></div><div class="chart-controls"><label>"Chart window"<select prop:value=move||chart_days.get().to_string() on:change=move|ev|chart_days.set(event_target_value(&ev).parse().unwrap_or(0))><option value="0">"Full period"</option><option value="90">"Last 90 days"</option><option value="30">"Last 30 days"</option><option value="7">"Last 7 days"</option></select></label><label class="check-label"><input type="checkbox" prop:checked=move||show_btc.get() on:change=move|ev|show_btc.set(event_target_checked(&ev))/>"BTC reference"</label><label class="check-label"><input type="checkbox" prop:checked=move||show_basket.get() on:change=move|ev|show_basket.set(event_target_checked(&ev))/>"Basket reference"</label></div><Chart points=equity fills=fills label="Net portfolio equity" benchmarks=benches/><p class="chart-note">"Green ▲ buys · red ▼ sells · ≤1,500 curve points / ≤200 markers. Metrics use full-resolution observations."</p><div class="warnings">{items(metric,"warnings").into_iter().chain(items(metric,"reasons")).map(|w|view!{<p>{w.as_str().unwrap_or("").to_string()}</p>}).collect_view()}</div><div class="detail-actions"><a class="secondary" href=format!("/api/jobs/{id}/trades?limit=100") target="_blank">"Exact trades (JSON) ↗"</a><button class="secondary" disabled=move||tuning_pending.get()||snapshot.with(|s|items(s,"tuning").iter().any(running)) on:click={let sid=text(&job,"strategy");let cid=text(&job,"campaign");move|_|start_tuning(sid.clone(),cid.clone(),snapshot,tuning_pending,status)}>{move||if tuning_pending.get(){"Starting tuning…"}else if snapshot.with(|s|items(s,"tuning").iter().any(running)){"Tuning in progress…"}else{"Tune parameters · 20 trials"}}</button></div>}.into_any()}}</section>}.into_any()}}
+    {move||{let job=detail.get(); if job.is_null() {return ().into_any();} let validation=job["period"]=="validation";let result=&job["result"];let metric=&result["metrics"];view!{<section class="panel run-detail"><div class="panel-heading"><div><h2>"Run details"</h2><p>{format!("{} → {} · EUR · {} bps fee + {} bps adverse allowance per fill",date(&job["config"]["start"]),date(&job["config"]["end"]),job["config"]["fee_bps"],job["config"]["slippage_bps"])}</p></div><code>{short(&text(&job,"id"))}</code></div>{if validation && job["owner_detail"]!=true {let id=text(&job,"id");view!{<div class="empty"><h3>{job_score(&job)}</h3><p>"Owner access includes metrics, equity and trades. Opening details records validation as revealed; agents remain restricted."</p><button class="secondary" disabled=move||reveal_pending.get() on:click=move|_|reveal_validation(id.clone(),detail,status,reveal_pending,chart_days)>{move||if reveal_pending.get(){"Opening details…"}else{"View validation details"}}</button></div>}.into_any()}else{let benches=items(result,"benchmarks").into_iter().filter(|b|if text(b,"name").starts_with("BTC"){show_btc.get()}else{show_basket.get()}).collect::<Vec<_>>();let equity=items(result,"equity");let fills=items(result,"fills");let marker_total=result["marker_total"].as_u64().unwrap_or(fills.len() as u64) as usize;let comparison=items(result,"benchmarks");let id=text(&job,"id");view!{<div class="detail-metrics"><div>"SHARPE"<strong>{score_value(&json!({"objective":"sharpe_daily_v1"}),&metric["sharpe"])}</strong></div><div>"NET CAGR"<strong>{percent(&metric["net_cagr"])}</strong></div><div>"MAX DRAWDOWN"<strong class="risk">{percent(&metric["max_drawdown"])}</strong></div><div>"ELIGIBILITY"<strong class:risk={metric["eligible"]!=true}>{if metric["eligible"]==true{"Eligible"}else{"Review"}}</strong></div><div>"NET RETURN"<strong>{percent(&metric["net_return"])}</strong></div><div>"FEES"<strong>{metric["total_fees"].as_str().and_then(|s|s.parse::<f64>().ok()).map(money).unwrap_or("—".into())}</strong></div><div>"FILLS"<strong>{metric["trades"].to_string()}</strong></div><div>"MEAN MONTH"<strong>{percent(&metric["mean_monthly_return"])}</strong></div></div><div class="chart-controls"><label>"Chart window"<select prop:value=move||chart_days.get().to_string() on:change=move|ev|chart_days.set(event_target_value(&ev).parse().unwrap_or(0))><option value="0">"Full period"</option><option value="90">"Last 90 days"</option><option value="30">"Last 30 days"</option><option value="7">"Last 7 days"</option></select></label><label class="check-label"><input type="checkbox" prop:checked=move||show_btc.get() on:change=move|ev|show_btc.set(event_target_checked(&ev))/>"BTC reference"</label><label class="check-label"><input type="checkbox" prop:checked=move||show_basket.get() on:change=move|ev|show_basket.set(event_target_checked(&ev))/>"Basket reference"</label></div><Chart points=equity fills=fills label="Net portfolio equity" benchmarks=benches marker_total=marker_total/><p class="chart-note">"Green buys · red sells. Dense trade markers are hidden; exact trades remain available. Metrics use full-resolution observations."</p><BenchmarkTable benchmarks=comparison/><div class="warnings">{items(metric,"warnings").into_iter().chain(items(metric,"reasons")).map(|w|view!{<p>{w.as_str().unwrap_or("").to_string()}</p>}).collect_view()}</div><div class="detail-actions"><a class="secondary" href=format!("/api/jobs/{id}/trades?limit=100") target="_blank">"Exact trades (JSON) ↗"</a><button class="secondary" disabled=move||tuning_pending.get()||snapshot.with(|s|items(s,"tuning").iter().any(running)) on:click={let sid=text(&job,"strategy");let cid=text(&job,"campaign");move|_|start_tuning(sid.clone(),cid.clone(),snapshot,tuning_pending,status)}>{move||if tuning_pending.get(){"Starting tuning…"}else if snapshot.with(|s|items(s,"tuning").iter().any(running)){"Tuning in progress…"}else{"Tune parameters · 20 trials"}}</button></div>}.into_any()}}</section>}.into_any()}}
     }
 }

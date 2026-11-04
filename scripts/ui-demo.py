@@ -54,3 +54,5 @@ db.commit()
 db.close()
 print(f'Synthetic UI demo: {state}\n{len(ids)} versions · {args.runs} backtests · 240 tuning runs')
 print(f'./target/release/tc --data-dir {state} serve --bind 127.0.0.1:8088 --assets dist')
+
+print(f'Locate the private owner sign-in key: ./target/release/tc --data-dir {state} auth status')

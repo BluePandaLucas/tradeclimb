@@ -72,7 +72,19 @@ pub fn PaperPanel(
     let strategies = Memo::new(move |_| snapshot.with(|s| items(s, "strategies")));
     let papers = Memo::new(move |_| snapshot.with(|s| items(s, "paper")));
     let selected = RwSignal::new(String::new());
-    let candidates = Memo::new(move |_| snapshot.with(|s| items(s, "paper_candidates")));
+    let candidates = Memo::new(move |_| {
+        snapshot.with(|s| {
+            let active: std::collections::HashSet<_> = items(s, "strategies")
+                .into_iter()
+                .filter(|v| v["archived"] != true)
+                .map(|v| text(&v, "id"))
+                .collect();
+            items(s, "paper_candidates")
+                .into_iter()
+                .filter(|c| c["strategy"].as_str().is_some_and(|id| active.contains(id)))
+                .collect::<Vec<_>>()
+        })
+    });
     let candidate = Memo::new(move |_| {
         candidates.with(|all| {
             all.iter()
@@ -81,22 +93,24 @@ pub fn PaperPanel(
         })
     });
     Effect::new(move |_| {
+        let current = selected.get();
         if !strategies.with(|all| {
             all.iter()
-                .any(|s| text(s, "id") == selected.get() && s["archived"] != true)
+                .any(|s| text(s, "id") == current && s["archived"] != true)
         }) {
-            selected.set(
-                candidates
-                    .with(|all| all.first().map(|c| text(c, "strategy")))
-                    .unwrap_or_else(|| {
-                        strategies.with(|all| {
-                            all.iter()
-                                .find(|s| s["archived"] != true)
-                                .map(|s| text(s, "id"))
-                                .unwrap_or_default()
-                        })
-                    }),
-            );
+            let next = candidates
+                .with(|all| all.first().map(|c| text(c, "strategy")))
+                .unwrap_or_else(|| {
+                    strategies.with(|all| {
+                        all.iter()
+                            .find(|s| s["archived"] != true)
+                            .map(|s| text(s, "id"))
+                            .unwrap_or_default()
+                    })
+                });
+            if next != current {
+                selected.set(next);
+            }
         }
     });
     view! {<section class="panel"><div class="panel-heading"><div><h2>"Paper portfolios"</h2><p>"Approve an eligible Bitvavo development evaluation. Maximum drawdown: 15%; growth aspiration: 15%. Candidates qualify by Sharpe; scalar validation does not certify risk."</p></div></div>

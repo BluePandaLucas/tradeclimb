@@ -46,7 +46,7 @@ cargo run --locked --release --bin tc -- demo
 ./scripts/start
 ```
 
-Demo creates a deterministic synthetic dataset, three example strategies, a fixed development/validation split, and three development jobs. The web service processes those queued jobs. All synthetic data is labeled; these returns are not evidence about the crypto market. The overview automatically opens a completed development curve. Select another run to compare it, toggle benchmarks, or request the last 7/30/90 days at higher resolution.
+Demo creates a deterministic synthetic dataset, three example strategies, a fixed development/validation split, and three development jobs. The web service processes those queued jobs. All synthetic data is labeled; these returns are not evidence about the crypto market. Select a run to open its curve; incoming evaluations preserve the selected page and chart. Choose another run to compare it, toggle benchmarks, or request the last 7/30/90 days at higher resolution.
 
 An independent demo directory can be used without mixing fixtures into research. A prepared one is available in this development checkout:
 
@@ -72,7 +72,7 @@ target/release/tc list
 target/release/tc campaign DATASET_ID
 ```
 
-A new full-range campaign evaluates development `[2022-11-01, 2025-11-01)` and validation `[2025-11-01, 2026-08-01)`. The owner reserved `[2026-08-01, 2026-11-01)` as the untouched final test. Ordinary evaluation, cached detail, rankings, and warmup inputs cannot expose it; final-test execution remains unavailable pending its owner-controlled workflow. Old campaigns are retained, but any overlapping job is blocked: create a current campaign revision. Smaller explicitly imported datasets use a 75/25 chronological split, which is useful for platform smoke tests and is not a replacement for four-year research. New campaigns default to daily Sharpe (`sharpe_daily_v1`); the UI, tuning, and validation feedback follow that campaign objective. Existing campaigns remain on CAGR. Create a legacy-style campaign with an explicit growth aspiration:
+A new full-range campaign evaluates development `[2022-11-01, 2025-11-01)` and validation `[2025-11-01, 2026-08-01)`. The owner reserved `[2026-08-01, 2026-11-01)` as the untouched final test. Ordinary evaluation, cached detail, rankings, and warmup inputs cannot expose it; only the separate explicit owner final-test workflow can consume it. Old campaigns are retained, but any overlapping job is blocked: create a current campaign revision. Smaller explicitly imported datasets use a 75/25 chronological split, which is useful for platform smoke tests and is not a replacement for four-year research. New campaigns default to daily Sharpe (`sharpe_daily_v1`); the UI, tuning, and validation feedback follow that campaign objective. Existing campaigns remain on CAGR. Create a legacy-style campaign with an explicit growth aspiration:
 
 ```bash
 target/release/tc campaign DATASET_ID --objective net_cagr --target-cagr 0.20
@@ -148,7 +148,7 @@ target/release/tc run --strategy STRATEGY_ID --campaign CAMPAIGN_ID --key valida
 
 The service must be running to execute queued jobs. It defaults to two workers, with a bounded queue and process deadlines. Cost stress tests use development only. Fees default to 25 basis points per fill and historical adverse execution allowance to 10 basis points per fill. These are explicit assumptions, not reconstructed historical fees or measured historical spreads. Current minimum notional and quantity precision are conservative assumed rules in the run configuration; historical rule changes are not reconstructed.
 
-Validation exposes only Sharpe for a new Sharpe campaign, or net CAGR for a legacy campaign. Ten unique queries are allowed globally per data directory, including all campaigns and strategies. Repeated identical queries reuse the original evaluation. Extending the budget and inspecting details are explicit local owner actions:
+Validation summaries expose Sharpe for a new Sharpe campaign, or net CAGR for a legacy campaign. In Run details, the owner can select **View validation details** to open full metrics, curves, benchmark diagnostics and exact trades. This is an audited reveal; development agents remain blocked. Ten unique queries are allowed globally per data directory, including all campaigns and strategies. Repeated identical queries reuse the original evaluation. Budget extensions remain local owner actions; the CLI also supports explicit owner inspection:
 
 ```bash
 target/release/tc budget
@@ -156,7 +156,7 @@ target/release/tc budget --extend 5
 target/release/tc inspect JOB_ID --reveal-validation --output /tmp/validation-report.json
 ```
 
-Owner inspection marks the ledger revealed. Trusted native code can bypass these cooperative rules; v2 isolation is the first priority. Development reports can be exported without the reveal flag. The exported report contains full equity, exact fills, monthly returns, and the pinned simulation configuration.
+Owner inspection marks the ledger revealed and does not run the strategy again or spend an additional validation query. The private owner account remains trusted; development agents use the isolated account and scoped API. Development reports can be exported without the reveal flag. The exported report contains full equity, exact fills, monthly returns, and the pinned simulation configuration.
 
 ## Paper trading and recovery
 
@@ -198,7 +198,7 @@ The benchmark runs a 20/100 moving-average fixture across the complete snapshot,
 
 ## Owner-approved paper promotion
 
-The Paper trading page lists each version's latest completed development evaluation, ranked by Sharpe when it qualifies. **Approve NAME** explicitly approves that immutable version and starts an independent EUR 10,000 paper session. The backend requires accepted, non-synthetic Bitvavo data, development risk eligibility, a defined Sharpe/CAGR, and observed drawdown at most 15%. The 15% growth objective is an aspiration, not a rejection threshold. A scalar validation score does not certify validation risk.
+The Paper trading page uses the searchable strategy/version picker and selects the best qualifying Sharpe candidate initially. **Approve paper session** explicitly approves the selected immutable version and starts an independent EUR 10,000 paper session. The backend requires accepted, non-synthetic Bitvavo data, development risk eligibility, a defined Sharpe/CAGR, and observed drawdown at most 15%. The 15% growth objective is an aspiration, not a rejection threshold. A scalar validation score does not certify validation risk.
 
 API owners send `{"strategy":"ID","job":"DEVELOPMENT_JOB_ID","approve":true}` to `/api/paper`. Approval, session creation and its audit entry are committed together; repeated starts retain the existing active portfolio. The `paper_approvals` overview entries retain the basis, Sharpe/drawdown/CAGR, growth-target status, approved job/version and owner time. Old unapproved sessions stop on service startup; historical journals remain. Existing simulation risk halts still apply and are not a guaranteed loss ceiling.
 
@@ -238,3 +238,11 @@ The imported 2022-11-01–2026-08-01 snapshot contains 7,919,484 candles. It fai
 `python3 scripts/record-books.py var/books-SESSION --seconds 3600 --interval 5` records bounded, read-only Bitvavo depth snapshots for all five markets. Each JSONL event retains original response JSON/hash, server nanosecond timestamp/nonce, local send/receive times, monotonic request duration and explicit errors/rate-limit pauses. The closed recording has a checksum manifest and defaults to a 1-GiB/one-day maximum. A fresh destination prevents accidental overwrite. Ctrl+C seals the captured recording; a hard crash leaves a partial JSONL file without a completed manifest.
 
 These are independent REST snapshots; gaps between polls cannot reconstruct a continuous book or queue position. The recorder makes no fills or cost estimates. Use representative sessions before calibrating participation, partial fills, latency and residual impact. The existing short `cost-audit.py` remains a displayed-depth sanity check. Current engine fee rounding and market precision, candle full-fill assumptions, paper top-level liquidity, limit-order/queue simulation and historical universes remain explicit follow-up work; those financial semantics have not been changed by adding data collection.
+
+## Research charts and comparisons
+
+Buy-and-hold overlays are solid, partially transparent lines with stable reference colors. Trade markers are omitted for runs with more than 100 visible-window fills or dense clusters; the chart explains what is hidden. A shorter chart window can restore sparse markers. Exact trades remain available through the authenticated link. Maximum drawdown and eligibility are visible in run details.
+
+The full-run comparison table shows each reference's Sharpe, the strategy-minus-reference Sharpe difference, information ratio and return difference in percentage points. Keep Sharpe as the main risk-adjusted ranking and use IR to assess consistent performance above the fixed five-asset basket; BTC is a secondary reference. An undefined comparison remains —, especially when complete daily observations are missing. Hiding a reference curve or changing chart windows does not change scoring. Existing recorded results are not reranked.
+
+After packaging, `python scripts/browser-research.py` in the Playwright environment tests the chart styles/density policy, full-resolution diagnostic payloads, explicit owner validation access, unchanged query usage and continued agent denial. All QA uses temporary synthetic fixtures; no real validation/final evaluation is required.

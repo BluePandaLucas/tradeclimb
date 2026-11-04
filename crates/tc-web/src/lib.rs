@@ -258,7 +258,7 @@ fn App() -> impl IntoView {
     <div class="content"><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>"Explore ideas. Measure honestly. Keep climbing."</p></div><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());campaign.map(|c|if is_sharpe(c) {"OBJECTIVE · SHARPE".into()} else {format!("GOAL {} NET CAGR",percent(&c["target_cagr"]))}).unwrap_or("OBJECTIVE · SHARPE".into())}}</span>{move||date(&snapshot.get()["time"])}</div></div>
     <Show when=move||tab.get()=="Backtests"><div class="controls"><div class="strategy-control"><span class="field-label">"Strategy / version"</span><StrategyPicker snapshot=snapshot selected=selected_strategy/></div>
     <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · {}",dataset_name(&snapshot.get(),&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),score_label(&c))}</option>}}/></select></label>
-    <label>"Period"<select prop:value=move||period.get() on:change=move|ev|period.set(event_target_value(&ev))><option value="development">"Development"</option><option value="validation">"Validation · score only"</option></select></label>
+    <label>"Period"<select prop:value=move||period.get() on:change=move|ev|period.set(event_target_value(&ev))><option value="development">"Development"</option><option value="validation">"Validation · owner details available"</option></select></label>
     <button class="primary" on:click=move|_|{let s=snapshot.get();let strategy=if selected_strategy.get().is_empty(){text(&items(&s,"strategies").into_iter().find(|s|s["archived"]!=true).unwrap_or(Value::Null),"id")}else{selected_strategy.get()};let campaign=if selected_campaign.get().is_empty(){text(&items(&s,"campaigns").into_iter().next().unwrap_or(Value::Null),"id")}else{selected_campaign.get()};action("/api/jobs".into(),json!({"strategy":strategy,"campaign":campaign,"period":period.get(),"idempotency_key":format!("web-{}",js_sys::Date::now())}),status);}>"＋ Run backtest"</button>
     </div></Show>
     <div class="notice">"Final test reserved: 1 August–31 October 2026. Development and validation exclude this period."</div>
@@ -290,6 +290,7 @@ fn Chart(
     fills: Vec<Value>,
     label: &'static str,
     benchmarks: Vec<Value>,
+    #[prop(default = 0)] marker_total: usize,
 ) -> impl IntoView {
     let xy: Vec<(f64, f64)> = points
         .iter()
@@ -323,9 +324,52 @@ fn Chart(
         .join(" ");
     let area = format!("65,275 {line} 1065,275");
     let ticks=(0..5).map(|i|{let value=low+(high-low)*i as f64/4.0;view!{<g><line x1="65" x2="1065" y1=y(value) y2=y(value) stroke="var(--chart-grid)" stroke-dasharray="3 5"/><text x="0" y=y(value)+4.0 fill="var(--muted)" font-size="11">{money(value)}</text></g>}}).collect_view();
-    let benchmark_lines=benchmarks.iter().enumerate().map(|(i,b)|{let points=items(b,"equity").iter().filter_map(|p|Some(format!("{:.2},{:.2}",x(p["time"].as_f64()?),y(p["equity"].as_f64()?)))).collect::<Vec<_>>().join(" ");view!{<polyline points=points fill="none" stroke=if i==0{"#9aabc2"}else{"#c1b49c"} stroke-width="1.6" stroke-dasharray="5 4"/>}}).collect_view();
-    let markers=fills.iter().take(200).filter_map(|f|{let time=f["time"].as_f64()?;let nearest=xy.iter().min_by(|a,b|(a.0-time).abs().total_cmp(&(b.0-time).abs()))?;let buy=f["side"]=="buy";let label=format!("{} {} at {}",if buy{"Buy"}else{"Sell"},text(f,"market"),date(&f["time"]));Some(view!{<circle cx=x(time) cy=y(nearest.1) r="3" fill=if buy{"var(--positive)"}else{"var(--negative)"} stroke="var(--surface)" stroke-width="1"><title>{label}</title></circle>})}).collect_view();
-    view!{<div class="chart"><div class="chart-title">{label}<span>"EUR · net of execution costs"</span></div><svg viewBox="0 0 1100 305" role="img" aria-label=label><defs><linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#258b6a" stop-opacity="0.13"/><stop offset="100%" stop-color="#258b6a" stop-opacity="0"/></linearGradient></defs>{ticks}<polygon points=area fill="url(#equity-fill)"/>{benchmark_lines}<polyline points=line fill="none" stroke="var(--positive)" stroke-width="2.2" stroke-linejoin="round"/>{markers}<text x="65" y="299" fill="var(--muted)" font-size="11">{date(&points[0]["time"])}</text><text x="925" y="299" fill="var(--muted)" font-size="11">{date(&points[points.len()-1]["time"])}</text></svg><div class="legend"><span>"● Strategy"</span>{benchmarks.into_iter().map(|b|view!{<span>{format!("┄ {}",text(&b,"name"))}</span>}).collect_view()}</div></div>}.into_any()
+    let color = |b: &Value| {
+        if text(b, "name").starts_with("BTC") {
+            "#9aabc2"
+        } else {
+            "#c1b49c"
+        }
+    };
+    let benchmark_lines=benchmarks.iter().map(|b|{let points=items(b,"equity").iter().filter_map(|p|Some(format!("{:.2},{:.2}",x(p["time"].as_f64()?),y(p["equity"].as_f64()?)))).collect::<Vec<_>>().join(" ");view!{<polyline class="benchmark-line" points=points fill="none" stroke=color(b) stroke-opacity="0.5" stroke-width="1.6" vector-effect="non-scaling-stroke"/>}}).collect_view();
+    let total = marker_total.max(fills.len());
+    let candidates: Vec<_> = fills
+        .iter()
+        .filter_map(|f| {
+            let time = f["time"].as_f64()?;
+            if time < start || time > end {
+                return None;
+            }
+            let nearest = xy
+                .iter()
+                .min_by(|a, b| (a.0 - time).abs().total_cmp(&(b.0 - time).abs()))?;
+            Some((x(time), y(nearest.1), f))
+        })
+        .collect();
+    let isolated: Vec<_> = candidates
+        .iter()
+        .enumerate()
+        .filter(|(i, p)| {
+            !candidates
+                .iter()
+                .enumerate()
+                .any(|(j, q)| *i != j && (p.0 - q.0).hypot(p.1 - q.1) < 16.0)
+        })
+        .map(|(_, p)| p)
+        .collect();
+    let dense = total > 100 || isolated.len() * 2 < candidates.len();
+    let visible = if dense { vec![] } else { isolated };
+    let shown = visible.len();
+    let markers=visible.into_iter().map(|(px,py,f)|{let buy=f["side"]=="buy";let title=format!("{} {} at {}",if buy{"Buy"}else{"Sell"},text(f,"market"),date(&f["time"]));view!{<circle class="trade-marker" cx=*px cy=*py r="3" fill=if buy{"var(--positive)"}else{"var(--negative)"} stroke="var(--surface)" stroke-width="1"><title>{title}</title></circle>}}).collect_view();
+    let marker_note = if shown < total {
+        format!(
+            "{} trade markers hidden for clarity. Use a shorter window or exact trades.",
+            total - shown
+        )
+    } else {
+        String::new()
+    };
+    view!{<div class="chart"><div class="chart-title">{label}<span>"EUR · net of execution costs"</span></div><svg viewBox="0 0 1100 305" role="img" aria-label=label><defs><linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#258b6a" stop-opacity="0.13"/><stop offset="100%" stop-color="#258b6a" stop-opacity="0"/></linearGradient></defs>{ticks}<polygon points=area fill="url(#equity-fill)"/>{benchmark_lines}<polyline points=line fill="none" stroke="var(--positive)" stroke-width="2.2" stroke-linejoin="round"/>{markers}<text x="65" y="299" fill="var(--muted)" font-size="11">{date(&points[0]["time"])}</text><text x="925" y="299" fill="var(--muted)" font-size="11">{date(&points[points.len()-1]["time"])}</text></svg><div class="legend"><span>"● Strategy"</span>{benchmarks.into_iter().map(|b|view!{<span>{format!("━ {}",text(&b,"name"))}</span>}).collect_view()}</div><p class="chart-note marker-note">{marker_note}</p></div>}.into_any()
 }
 
 fn is_sharpe(v: &Value) -> bool {

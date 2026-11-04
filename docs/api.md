@@ -17,8 +17,9 @@ The `leaderboards` array compares completed runs across the full retained histor
 | POST | `/api/jobs` | Submit a registered strategy to a fixed campaign |
 | GET | `/api/jobs/index` | All lightweight run summaries, newest first; no chart payloads |
 | GET | `/api/jobs/{id}` | Run status and permitted results |
-| GET | `/api/jobs/{id}?days=7` | Development chart detail, resampled from full equity; also 30 or 90 days |
-| GET | `/api/jobs/{id}/trades?offset=0&limit=100` | Exact development fills; maximum page size 1,000 |
+| GET | `/api/jobs/{id}?days=7` | Permitted chart detail, resampled from full equity; also 30 or 90 days |
+| GET | `/api/jobs/{id}/trades?offset=0&limit=100` | Exact permitted fills; maximum page size 1,000 |
+| POST | `/api/jobs/{id}/reveal` | Owner explicitly opens completed validation metrics, curves and trades; records revelation without another evaluation |
 | POST | `/api/jobs/{id}/cancel` | Cancel a queued/running job and terminate its process group |
 | POST | `/api/campaigns` | Create/retrieve a campaign for an accepted immutable dataset |
 | POST | `/api/strategies/{id}/archive` | Toggle archive status; preserve old versions and runs |
@@ -47,9 +48,9 @@ Submit a run using IDs returned by the CLI or overview:
 }
 ```
 
-`period` may be `validation`. Its successful result contains only `sharpe` for a Sharpe campaign or `net_cagr` for a legacy campaign, possibly null when undefined. Validation fills and chart routes are restricted. Its cost/risk configuration is frozen. A development submission may include `slippage_bps` for cost stress tests. Reusing an idempotency key with different inputs fails; repeated identical validation evaluations return the existing job without consuming another query.
+`period` may be `validation`. Its successful result contains only `sharpe` for a Sharpe campaign or `net_cagr` for a legacy campaign, possibly null when undefined. Ordinary validation summaries remain scalar. Owner `POST /api/jobs/{id}/reveal` records the reveal and returns full detail; subsequent owner detail/window/trade requests are allowed for that job. Agents remain development-only even after a reveal. Owner detail carries `owner_detail: true`; the history index, snapshots and stored ranking summaries keep scalar validation results. Its cost/risk configuration is frozen. A development submission may include `slippage_bps` for cost stress tests. Reusing an idempotency key with different inputs fails; repeated identical validation evaluations return the existing job without consuming another query.
 
-The SQLite validation ledger is global to the data directory, including all campaigns, strategy families, parameter revisions, and objective changes. It starts with ten queries. Failed validation attempts still consume their reserved query. CLI budget extension and owner inspection are audited and never available as web mutations.
+The SQLite validation ledger is global to the data directory, including all campaigns, strategy families, parameter revisions, and objective changes. It starts with ten queries. Failed validation attempts still consume their reserved query. Budget extension remains an audited local CLI action. Owner inspection through the CLI or the authenticated reveal endpoint is audited, sets the global revealed flag, and does not spend another validation query. The final-test reservation is enforced before any reveal.
 
 ## Numeric tuning
 
@@ -86,3 +87,13 @@ SMA and volatility use a completed rolling window (population standard deviation
 Set `TC_MODEL_MAP='{"quick-analysis":"YOUR_LOCAL_MODEL"}'` and optionally `TC_OLLAMA_URL=http://127.0.0.1:11434` before starting the service. Strategies invoke the logical capability `quick-analysis`; the server selects the model. No model download is automatic. The `fake` capability echoes the prompt for integration tests.
 
 Use `tc_sdk::HttpModelClient::from_env()`; the default server URL is localhost:8080, overridable with `TC_MODEL_URL`. Confined executables receive `TC_MODEL_SOCKET=/broker/model.sock`; `HttpModelClient::from_env()` automatically uses this Unix socket. Its framed request is `{capability, prompt, max_tokens}` and its framed response is `{"status":"ok","value":MODEL_RESPONSE}` or `{"status":"error","value":"MESSAGE"}`. The broker fixes the owning historical job/paper session; request fields cannot change its scope. Requests are at most 64 KiB (prompts still at most 32 KiB), response text at most 128 KiB, and client reads/writes have a shared two-second deadline per frame. Model inference retains a 30-second provider timeout; broker shutdown cancels it. Errors return a generic message and log owner diagnostics. Strategies have no direct host-network access. Legacy HTTP transport requires owner authentication; set `TC_API_TOKEN_FILE` to the private owner-key file for the SDK client. It remains available to trusted local tools using `TC_MODEL_SCOPE` and `{scope, request: {capability, prompt, max_tokens}}`; it is not a sandbox bypass. Each job or paper session allows at most 64 calls, at most 2,048 output tokens each, and 32 KiB prompts. Successful responses are recorded and repeated requests replay them. Failed/pending reservations remain consumed; no unbounded retry loop. Model calls are opt-in strategy behavior and separate scopes prevent cache reuse across development and validation. General model knowledge of historical events is accepted for v1 and recorded as an unknown training cutoff.
+
+## Benchmark diagnostics
+
+New development result references include `comparison` with convention `buy_hold_comparison_daily_v1`: benchmark/strategy daily Sharpe, their difference, information ratio, paired-day count, net-return difference and CAGR difference. IR is mean paired daily simple active return divided by its sample standard deviation, annualized by sqrt(365.25). Daily tracking error at or below 1e-12, fewer than two complete days, missing boundaries or invalid equity produces null rather than infinity or a fabricated score. No gaps are forward-filled. Formulae use full equity before chart sampling, with the same UTC-day and terminal-cost convention as Sharpe.
+
+The fixed primary comparison is the five-asset buy-and-hold basket; BTC is secondary. References use the strategy's dates, capital, fees and slippage, with the reference drawdown halt disabled so it remains buy-and-hold. This is not equal drawdown risk. Sharpe remains the campaign objective; diagnostics never divide Sharpe ratios or rewrite old rankings. Chart-window changes affect curves/markers, while the comparison table remains full-run. Legacy development references can be rebuilt from the saved full report and frozen dataset on first detail access, without rerunning the strategy; original stored metrics/objectives are preserved. Revealed validation references are cached privately and never added to its public/scoped summaries.
+
+`GET /api/jobs/index` filters agent history to development and excludes reserved-window runs; agent job counters are similarly scoped. All API responses remain authenticated and non-cacheable.
+
+Native reference reconstruction and full-report processing share one service semaphore across the owner TCP and agent Unix transports. A permit remains owned by the blocking task even if its HTTP request is cancelled. Metadata/history requests do not acquire it; repeated report requests reuse the private cache.

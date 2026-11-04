@@ -53,6 +53,8 @@ python3 scripts/ui-demo.py
 ./target/release/tc --data-dir var/ui-backlog serve --bind 127.0.0.1:8088 --assets dist
 ```
 
-The seed command requires a fresh directory and never overwrites an existing workspace. All data is synthetic; backlog rows have no performance results. The original three demo evaluations run normally and provide inspectable charts. Open the strategy picker to search families and exact versions. New backtests wait behind “Show new runs” so the current page stays in place. Run `scripts/browser-backlog.py` with the optional Playwright environment to check growing backlogs, keyboard focus, old-run search, both themes, and mobile layout.
+The V2 interface requires owner sign-in; locate the private key with `target/release/tc --data-dir var/ui-backlog auth status`. The seed command requires a fresh directory and never overwrites an existing workspace. All data is synthetic; backlog rows have no performance results. The original three demo evaluations run normally and provide inspectable charts. Open the strategy picker to search families and exact versions. New backtests wait behind “Show new runs” so the current page stays in place. Run `scripts/browser-backlog.py` with the optional Playwright environment to check growing backlogs, keyboard focus, old-run search, both themes, and mobile layout.
 
 The browser loads a lightweight run index once and keeps the live feed bounded to 50 runs. DOM pagination bounds rendering; the strategy and run indexes remain in browser memory, so very large workspaces beyond the tested thousands will eventually need server-side search/pagination.
+
+`python scripts/browser-research.py` in the Playwright environment verifies solid translucent references, dense-marker suppression, benchmark diagnostics, explicit owner validation disclosure, unchanged query usage, agent restrictions after disclosure, and archived/empty picker states using temporary synthetic fixtures.

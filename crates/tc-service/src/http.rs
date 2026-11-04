@@ -212,6 +212,7 @@ fn routes(store: Store) -> Router {
         .route("/api/jobs/{id}/cancel", post(cancel))
         .route("/api/jobs/{id}", get(job))
         .route("/api/jobs/{id}/trades", get(trades))
+        .route("/api/jobs/{id}/reveal", post(reveal_validation))
         .route("/api/campaigns", post(campaign))
         .route("/api/strategies/{id}/archive", post(archive))
         .route("/api/paper", post(start_paper))
@@ -521,38 +522,92 @@ struct ChartWindow {
     #[serde(default)]
     days: u32,
 }
+async fn report_work<T: Send + 'static>(
+    store: &Store,
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    let permit = store.report_slots.clone().acquire_owned().await?;
+    tokio::task::spawn_blocking(move || {
+        // Cancellation of the HTTP future must not release the permit while
+        // its blocking computation is still consuming memory/CPU.
+        let _permit = permit;
+        work()
+    })
+    .await?
+}
+async fn reveal_validation(
+    State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
+    RoutePath(id): RoutePath<String>,
+) -> Api<Value> {
+    if principal.role != auth::Role::Owner {
+        return Err(anyhow::anyhow!("owner access required").into());
+    }
+    let job = app.store.job(&id)?;
+    ensure_research_window(job.config.start, job.config.end)?;
+    if !(job.period == Period::Validation && job.state == "completed") {
+        return Err(anyhow::anyhow!("completed validation evaluation required").into());
+    }
+    let store = app.store.clone();
+    let value = report_work(&app.store, move || -> Result<Value> {
+        store.owner_report(&id)?;
+        let mut value = serde_json::to_value(&job)?;
+        value["result"] = store.detail_view(&job)?;
+        value["owner_detail"] = json!(true);
+        Ok(value)
+    })
+    .await?;
+    Ok(Json(value))
+}
 async fn job(
     State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
     RoutePath(id): RoutePath<String>,
     Query(window): Query<ChartWindow>,
-) -> Api<Job> {
+) -> Api<Value> {
     let mut job = app.store.job(&id)?;
     ensure_research_window(job.config.start, job.config.end)?;
-    if job.period == Period::Development {
+    if ![0, 7, 30, 90].contains(&window.days) {
+        return Err(anyhow::anyhow!("chart windows are 7, 30, or 90 days").into());
+    }
+    let owner_detail = job.period == Period::Validation
+        && principal.role == auth::Role::Owner
+        && app.store.get::<Value>("validation_reveal", &id).is_ok();
+    if job.period == Period::Development || owner_detail {
         let directory = app.store.root.join("jobs").join(&id);
         let name = if job.state == "completed" {
             "result.json"
         } else {
             "progress.json"
         };
-        if let Ok(mut value) = read_json::<Value>(&directory.join(name)) {
+        let value = if owner_detail {
+            let (store, job) = (app.store.clone(), job.clone());
+            Some(report_work(&app.store, move || store.detail_view(&job)).await?)
+        } else {
+            read_json::<Value>(&directory.join(name)).ok()
+        };
+        if let Some(mut value) = value {
+            let needs_comparison = job.state == "completed"
+                && value["benchmarks"]
+                    .as_array()
+                    .is_some_and(|rows| rows.iter().any(|b| b.get("comparison").is_none()));
+            if needs_comparison && directory.join("report.json.gz").exists() {
+                let (store, job) = (app.store.clone(), job.clone());
+                value = report_work(&app.store, move || store.detail_view(&job)).await?;
+            }
             if window.days > 0 && job.state == "completed" {
-                if ![7, 30, 90].contains(&window.days) {
-                    return Err(anyhow::anyhow!("chart windows are 7, 30, or 90 days").into());
-                }
-                let cached = directory.join(format!("chart-{}.json", window.days));
+                let cached = directory.join(format!("detail-v3-chart-{}.json", window.days));
                 value = if let Ok(v) = read_json::<Value>(&cached) {
                     v
                 } else {
                     let path = directory.join("report.json.gz");
                     let cutoff = (job.config.end - i64::from(window.days) * 1440 * MINUTE)
                         .max(job.config.start);
-
-                    tokio::task::spawn_blocking(move || -> Result<Value> {
-                        let mut r = read_report(&path)?;
-                        r.equity.retain(|p| p.time >= cutoff);
-                        r.fills.retain(|f| f.time >= cutoff);
-                        let mut view = serde_json::to_value(RunView::from_report(&r))?;
+                    report_work(&app.store, move || -> Result<Value> {
+                        let mut report = read_report(&path)?;
+                        report.equity.retain(|p| p.time >= cutoff);
+                        report.fills.retain(|f| f.time >= cutoff);
+                        let mut view = serde_json::to_value(RunView::from_report(&report))?;
                         if let Some(benchmarks) = value["benchmarks"].as_array_mut() {
                             for b in benchmarks.iter_mut() {
                                 if let Some(points) = b["equity"].as_array_mut() {
@@ -566,13 +621,15 @@ async fn job(
                         save_json(&cached, &view)?;
                         Ok(view)
                     })
-                    .await??
+                    .await?
                 };
             }
             job.result = Some(value);
         }
     }
-    Ok(Json(job))
+    let mut value = serde_json::to_value(job)?;
+    value["owner_detail"] = json!(owner_detail);
+    Ok(Json(value))
 }
 #[derive(Deserialize)]
 struct Page {
@@ -586,19 +643,22 @@ fn page_size() -> usize {
 }
 async fn trades(
     State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
     RoutePath(id): RoutePath<String>,
     Query(page): Query<Page>,
 ) -> Api<Value> {
     let job = app.store.job(&id)?;
     ensure_research_window(job.config.start, job.config.end)?;
-    if job.period == Period::Validation {
-        return Err(anyhow::anyhow!(
-            "validation exposes only the campaign score; use explicit local owner inspection to reveal details"
-        )
-        .into());
+    if job.period == Period::Validation
+        && !(principal.role == auth::Role::Owner
+            && app.store.get::<Value>("validation_reveal", &id).is_ok())
+    {
+        return Err(
+            anyhow::anyhow!("reveal validation details as owner before accessing trades").into(),
+        );
     }
     let path = app.store.root.join("jobs").join(id).join("report.json.gz");
-    let report = tokio::task::spawn_blocking(move || read_report(&path)).await??;
+    let report = report_work(&app.store, move || read_report(&path)).await?;
     let data: Vec<_> = report
         .fills
         .iter()
@@ -1007,6 +1067,153 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn owner_reveal_is_audited_but_agents_and_history_remain_restricted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let start = timestamp("2024-01-01").unwrap();
+        let rows = (0..30)
+            .flat_map(|i| {
+                MARKETS.iter().map(move |market| Candle {
+                    market: (*market).into(),
+                    time: start + i * MINUTE,
+                    open: 100.into(),
+                    high: 100.into(),
+                    low: 100.into(),
+                    close: 100.into(),
+                    volume: 100.into(),
+                })
+            })
+            .collect();
+        let dataset =
+            tc_data::snapshot(&store.root, rows, start, start + 30 * MINUTE, true, false).unwrap();
+        let campaign = store.campaign(&dataset.id).unwrap();
+        let strategy = store
+            .register(
+                StrategySpec {
+                    parameters: Default::default(),
+                    name: "Cash".into(),
+                    description: "fixture".into(),
+                    kind: StrategyKind::Cash,
+                    markets: vec!["BTC-EUR".into()],
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        let mut job = store
+            .submit(Submission {
+                strategy: strategy.id,
+                campaign: campaign.id,
+                period: Period::Validation,
+                idempotency_key: "validation".into(),
+                slippage_bps: None,
+            })
+            .unwrap();
+        worker(&store.root, &job.id).unwrap();
+        job.state = "completed".into();
+        job.result =
+            Some(read_json(&store.root.join("jobs").join(&job.id).join("result.json")).unwrap());
+        store.update_job(&job).unwrap();
+        let before = store.ledger().unwrap();
+        let response = routes(store.clone())
+            .oneshot(
+                owner_request(&store)
+                    .method("POST")
+                    .uri(format!("/api/jobs/{}/reveal", job.id))
+                    .header("host", "localhost")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["owner_detail"], true);
+        assert!(value["result"]["equity"].is_array());
+        assert!(value["result"]["benchmarks"][0]["comparison"].is_object());
+        assert_eq!(store.ledger().unwrap()["used"], before["used"]);
+        assert_eq!(store.ledger().unwrap()["revealed"], true);
+        let token = dir.path().join("agent.key");
+        auth::issue_agent(&store, "test", &token, 1).unwrap();
+        let key = fs::read_to_string(token).unwrap();
+        for (method, path, status) in [
+            (
+                "GET",
+                format!("/api/jobs/{}", job.id),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "GET",
+                format!("/api/jobs/{}/trades", job.id),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "POST",
+                format!("/api/jobs/{}/reveal", job.id),
+                StatusCode::FORBIDDEN,
+            ),
+            ("GET", "/api/jobs/index".into(), StatusCode::OK),
+            ("GET", "/api/overview".into(), StatusCode::OK),
+        ] {
+            let response = routes(store.clone())
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(method)
+                        .uri(&path)
+                        .header("host", "localhost")
+                        .header("authorization", format!("Bearer {}", key.trim()))
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+                .await
+                .unwrap();
+            let text = String::from_utf8(bytes.to_vec()).unwrap();
+            assert!(!text.contains(&job.id));
+            if path == "/api/overview" {
+                let value: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(value["job_counts"]["total"], 0);
+            }
+        }
+        for path in [
+            format!("/api/jobs/{}?days=7", job.id),
+            format!("/api/jobs/{}/trades", job.id),
+        ] {
+            let response = routes(store.clone())
+                .oneshot(
+                    owner_request(&store)
+                        .uri(path)
+                        .header("host", "localhost")
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        let response = routes(store.clone())
+            .oneshot(
+                owner_request(&store)
+                    .uri("/api/jobs/index")
+                    .header("host", "localhost")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        let rows: Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(rows[0]["result"].get("equity").is_none());
+    }
+    #[tokio::test]
     async fn validation_http_never_loads_local_detail_files() {
         for objective in [Objective::NetCagr, Objective::SharpeDailyV1] {
             let dir = tempfile::tempdir().unwrap();
@@ -1117,6 +1324,7 @@ mod tests {
             "/api/jobs/reserved?days=7",
             "/api/jobs/reserved/trades",
             "/api/overview",
+            "/api/jobs/index",
         ] {
             let req = owner_request(&store)
                 .uri(route)
@@ -1126,7 +1334,7 @@ mod tests {
             let response = routes(store.clone()).oneshot(req).await.unwrap();
             assert_eq!(
                 response.status(),
-                if route == "/api/overview" {
+                if route == "/api/overview" || route == "/api/jobs/index" {
                     StatusCode::OK
                 } else {
                     StatusCode::BAD_REQUEST

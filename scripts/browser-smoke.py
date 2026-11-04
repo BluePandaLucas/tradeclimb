@@ -169,7 +169,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert comparison.input_value()==validation_option
    rows.first.get_by_role('button').click()
    page.get_by_role('heading',name='Run details',exact=True).wait_for()
-   assert page.get_by_text('Validation detail is withheld.',exact=False).count()==1
+   assert page.get_by_role('button',name='View validation details',exact=True).count()==1
    with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:validation_data=json.load(response)
    assert not validation_data['validation']['revealed'],'leaderboard revealed validation'
    page.get_by_role('button',name='Leaderboard',exact=True).click()
