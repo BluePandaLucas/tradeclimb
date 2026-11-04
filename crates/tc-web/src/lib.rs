@@ -2,6 +2,7 @@
 mod evaluations;
 mod leaderboard;
 mod paper;
+mod strategies;
 mod theme;
 use evaluations::{Evaluations, RunDetail};
 use gloo_net::http::Request;
@@ -9,6 +10,7 @@ use leaderboard::Leaderboard;
 use leptos::{prelude::*, task::spawn_local};
 use paper::PaperPanel;
 use serde_json::{Value, json};
+use strategies::{History, StrategyPicker};
 use theme::ThemeToggle;
 use wasm_bindgen::{JsCast, prelude::*};
 fn text(v: &Value, key: &str) -> String {
@@ -119,6 +121,7 @@ fn App() -> impl IntoView {
     let run_detail = RwSignal::new(Value::Null);
     let tuning_pending = RwSignal::new(false);
     let selected_strategy = RwSignal::new(String::new());
+    let selected_history = RwSignal::new(String::new());
     let selected_campaign = RwSignal::new(String::new());
     let paper_pending = RwSignal::new(Vec::<String>::new());
     let period = RwSignal::new("development".to_string());
@@ -200,27 +203,6 @@ fn App() -> impl IntoView {
             }
         });
     });
-    Effect::new(move || {
-        if tab.get() == "Overview"
-            && selected.get().is_empty()
-            && let Some(id) = snapshot.with(|data| {
-                let trials = items(data, "tuning")
-                    .into_iter()
-                    .flat_map(|t| items(&t, "jobs"))
-                    .collect::<Vec<_>>();
-                items(data, "jobs")
-                    .into_iter()
-                    .find(|job| {
-                        job["period"] == "development"
-                            && job["state"] == "completed"
-                            && !trials.contains(&job["id"])
-                    })
-                    .map(|job| text(&job, "id"))
-            })
-        {
-            selected.set(id);
-        }
-    });
     spawn_local(async move {
         match Request::get("/api/overview").send().await {
             Ok(r) if r.status() == 401 => sign_in(),
@@ -274,23 +256,23 @@ fn App() -> impl IntoView {
     <div class="sidebar-bottom"><span class="mode-dot"></span>"Paper only"<p>"Local workspace · isolated strategies"</p><div class="version">"TC / v0.1"</div></div></aside>
     <main><header class="topbar"><div class="breadcrumb">"Workspace"<span>"/"</span>{move||tab.get()}</div><div class="connection"><span class:offline=move||!online.get() class="live-dot"></span><span class="connection-text">{move||if online.get(){"Connected"}else{"Reconnecting"}}</span><ThemeToggle/><button class="text-button" on:click=move|_|{spawn_local(async move {let _=Request::post("/api/logout").send().await;sign_in();});}>"Sign out"</button><span class="pill">"NO REAL ORDERS"</span></div></header>
     <div class="content"><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>"Explore ideas. Measure honestly. Keep climbing."</p></div><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());campaign.map(|c|if is_sharpe(c) {"OBJECTIVE · SHARPE".into()} else {format!("GOAL {} NET CAGR",percent(&c["target_cagr"]))}).unwrap_or("OBJECTIVE · SHARPE".into())}}</span>{move||date(&snapshot.get()["time"])}</div></div>
-    <Show when=move||tab.get()=="Backtests"><div class="controls"><label>"Strategy"<select prop:value=move||selected_strategy.get() on:change=move|ev|selected_strategy.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"strategies").into_iter().filter(|s|s["archived"]!=true).collect::<Vec<_>>()} key={|s:&Value|text(s,"id")} children={move |s| view!{<option value=text(&s,"id")>{text(&s["spec"],"name")}</option>}}/></select></label>
+    <Show when=move||tab.get()=="Backtests"><div class="controls"><div class="strategy-control"><span class="field-label">"Strategy / version"</span><StrategyPicker snapshot=snapshot selected=selected_strategy/></div>
     <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · {}",dataset_name(&snapshot.get(),&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),score_label(&c))}</option>}}/></select></label>
     <label>"Period"<select prop:value=move||period.get() on:change=move|ev|period.set(event_target_value(&ev))><option value="development">"Development"</option><option value="validation">"Validation · score only"</option></select></label>
     <button class="primary" on:click=move|_|{let s=snapshot.get();let strategy=if selected_strategy.get().is_empty(){text(&items(&s,"strategies").into_iter().find(|s|s["archived"]!=true).unwrap_or(Value::Null),"id")}else{selected_strategy.get()};let campaign=if selected_campaign.get().is_empty(){text(&items(&s,"campaigns").into_iter().next().unwrap_or(Value::Null),"id")}else{selected_campaign.get()};action("/api/jobs".into(),json!({"strategy":strategy,"campaign":campaign,"period":period.get(),"idempotency_key":format!("web-{}",js_sys::Date::now())}),status);}>"＋ Run backtest"</button>
     </div></Show>
     <div class="notice">"Final test reserved: 1 August–31 October 2026. Development and validation exclude this period."</div>
     <div class="statusline" role="status">{move||status.get()}</div>
-    {move||{let data=snapshot.get();let jobs=items(&data,"jobs");let strategies=items(&data,"strategies");let papers=items(&data,"paper");let active=jobs.iter().filter(|j|["queued","preparing","running"].contains(&text(j,"state").as_str())).count();let completed=jobs.iter().filter(|j|j["state"]=="completed").count();view!{
+    {move||{let data=snapshot.get();let jobs=items(&data,"jobs");let strategies=items(&data,"strategies");let active=jobs.iter().filter(|j|["queued","preparing","running"].contains(&text(j,"state").as_str())).count();let active=data["job_counts"]["active"].as_u64().unwrap_or(active as u64);let completed=data["job_counts"]["completed"].as_u64().unwrap_or_else(||jobs.iter().filter(|j|j["state"]=="completed").count() as u64);view!{
     {if tab.get()=="Overview" {view!{<div class="stats"><Stat label="STRATEGY VERSIONS" value=strategies.len().to_string() note="Every evaluated idea is retained"/><Stat label="ACTIVE EVALUATIONS" value=active.to_string() note="Bounded local workers"/><Stat label="COMPLETED BACKTESTS" value=completed.to_string() note="Costs included in all results"/><Stat label="VALIDATION BUDGET" value=format!("{} / {}",data["validation"]["used"],data["validation"]["maximum"]) note=if data["validation"]["revealed"]==true{"Owner has revealed validation"}else{"Campaign-wide scalar feedback"}/></div>}.into_any()}else{().into_any()}}
     {if items(&data,"datasets").iter().any(|d|d["synthetic"]==true){view!{<div class="notice">"◇ Synthetic fixtures are present. Their curves verify the platform and are not market performance evidence."</div>}.into_any()}else{().into_any()}}
     {if items(&data,"datasets").iter().any(|d|d["accepted"]==false){view!{<div class="notice">"A downloaded historical snapshot needs coverage review. It is excluded from research campaigns until explicitly accepted."</div>}.into_any()}else{().into_any()}}
     {if tab.get()=="Leaderboard" {view!{<Leaderboard data=data.clone() selected=leaderboard_group tab=tab run=selected/>}.into_any()}
-    else if tab.get()=="Paper trading" {view!{<PaperPanel strategies=strategies.clone() papers=papers status=status pending=paper_pending snapshot=snapshot/>}.into_any()}
-    else if tab.get()=="History" {view!{<section class="panel"><div class="panel-heading"><div><h2>"Strategy history book"</h2><p>"Immutable versions, descriptions, and lineage"</p></div></div>{strategies.into_iter().map(|s|{let id=text(&s,"id");view!{<article class="history-entry"><div class="section-row"><h3>{text(&s["spec"],"name")}</h3><code>{short(&id)}</code><button class="secondary" on:click=move|_|action(format!("/api/strategies/{id}/archive"),json!({}),status)>{if s["archived"]==true{"Restore"}else{"Archive"}}</button></div><p>{text(&s["spec"],"description")}</p><p class="muted">{format!("{} · {}",date(&s["created_at"]),s["spec"]["kind"]["kind"].as_str().unwrap_or("strategy"))}</p></article>}}).collect_view()}</section>}.into_any()}
     else {().into_any()}}
     <footer>"TC · Research, not a promise of returns."<span>"Fees included / independent virtual portfolios / no real orders"</span></footer>
     }}}
+    <Show when=move||tab.get()=="History"><History snapshot=snapshot status=status selected=selected_history/></Show>
+    <Show when=move||tab.get()=="Paper trading"><PaperPanel status=status pending=paper_pending snapshot=snapshot/></Show>
     <Show when=move||["Overview","Backtests"].contains(&tab.get().as_str())>
         <Evaluations snapshot=snapshot selected=selected status=status/>
         <RunDetail snapshot=snapshot detail=run_detail status=status chart_days=chart_days show_btc=show_btc show_basket=show_basket tuning_pending=tuning_pending/>

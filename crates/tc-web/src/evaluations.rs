@@ -60,36 +60,206 @@ pub fn Evaluations(
     status: RwSignal<String>,
 ) -> impl IntoView {
     let page = RwSignal::new(0_usize);
+    let history = RwSignal::new(Vec::<Value>::new());
+    let history_ready = RwSignal::new(false);
+    spawn_local(async move {
+        let loaded = async {
+            let response = Request::get("/api/jobs/index").send().await.ok()?;
+            if !response.ok() {
+                return None;
+            }
+            response.json::<Vec<Value>>().await.ok()
+        }
+        .await;
+        if let Some(mut rows) = loaded {
+            let live = history.get_untracked();
+            let ids = rows
+                .iter()
+                .map(|j| text(j, "id"))
+                .collect::<std::collections::HashSet<_>>();
+            rows.extend(live.into_iter().filter(|j| !ids.contains(&text(j, "id"))));
+            history.set(rows);
+        } else {
+            status.set(
+                "Run history could not load. Showing the live feed; reopen this page to retry."
+                    .into(),
+            );
+        }
+        history_ready.set(true);
+    });
+    Effect::new(move |_| {
+        let recent = snapshot.with(|s| items(s, "jobs"));
+        history.update(|all| {
+            let positions = all
+                .iter()
+                .enumerate()
+                .map(|(i, j)| (text(j, "id"), i))
+                .collect::<std::collections::HashMap<_, _>>();
+            for j in recent {
+                if let Some(&i) = positions.get(&text(&j, "id")) {
+                    all[i] = j;
+                } else {
+                    all.push(j);
+                }
+            }
+        });
+    });
+    // Merge live summaries into the history fetched once. Charts stay on demand.
+    let indexed_jobs = Memo::new(move |_| {
+        let mut by_id = history.with(|all| {
+            all.iter()
+                .map(|j| (text(j, "id"), j.clone()))
+                .collect::<std::collections::HashMap<_, _>>()
+        });
+        snapshot.with(|s| {
+            for j in items(s, "jobs") {
+                by_id.insert(text(&j, "id"), j);
+            }
+        });
+        let mut all = by_id.into_values().collect::<Vec<_>>();
+        all.sort_by(|a, b| {
+            b["created_at"]
+                .as_i64()
+                .cmp(&a["created_at"].as_i64())
+                .then_with(|| text(b, "id").cmp(&text(a, "id")))
+        });
+        all
+    });
     let show_trials = RwSignal::new(false);
-    let jobs = Memo::new(move |_| {
+    let tuning_view = RwSignal::new(false);
+    let tuning_page = RwSignal::new(0_usize);
+    let strategy_filter = RwSignal::new(String::new());
+    let search = RwSignal::new(String::new());
+    let state = RwSignal::new(String::new());
+    let strategy_names = Memo::new(move |_| {
+        snapshot.with(|s| {
+            items(s, "strategies")
+                .into_iter()
+                .map(|s| (text(&s, "id"), text(&s["spec"], "name")))
+                .collect::<std::collections::HashMap<_, _>>()
+        })
+    });
+    let known_jobs = RwSignal::new(std::collections::HashSet::<String>::new());
+    Effect::new(move |_| {
+        search.track();
+        state.track();
+        strategy_filter.track();
+        show_trials.track();
+        history_ready.track();
+        page.set(0);
+        tuning_page.set(0);
+        known_jobs
+            .set(indexed_jobs.with_untracked(|all| all.iter().map(|j| text(j, "id")).collect()));
+    });
+    let tuning = Memo::new(move |_| {
+        snapshot.with(|s| {
+            items(s, "tuning")
+                .into_iter()
+                .filter(|t| {
+                    (strategy_filter.get().is_empty()
+                        || text(t, "strategy") == strategy_filter.get())
+                        && (state.get().is_empty()
+                            || if state.get() == "active" {
+                                running(t)
+                            } else {
+                                text(t, "state") == state.get()
+                            })
+                        && format!(
+                            "{} {}",
+                            text(t, "id"),
+                            strategy_names.with(|names| names
+                                .get(&text(t, "strategy"))
+                                .cloned()
+                                .unwrap_or_default())
+                        )
+                        .to_lowercase()
+                        .contains(&search.get().to_lowercase())
+                })
+                .collect::<Vec<_>>()
+        })
+    });
+    Effect::new(move |_| {
+        let maximum = tuning.with(|all| all.len().div_ceil(5).max(1)) - 1;
+        if tuning_page.get_untracked() > maximum {
+            tuning_page.set(maximum);
+        }
+    });
+    let matching_jobs = Memo::new(move |_| {
         let data = snapshot.get();
         let trials = items(&data, "tuning")
             .into_iter()
             .flat_map(|t| items(&t, "jobs"))
-            .collect::<Vec<_>>();
-        items(&data, "jobs")
+            .filter_map(|id| id.as_str().map(str::to_owned))
+            .collect::<std::collections::HashSet<_>>();
+        indexed_jobs
+            .get()
             .into_iter()
-            .filter(|j| show_trials.get() || !trials.iter().any(|id| id == &j["id"]))
+            .filter(|j| show_trials.get() || !trials.contains(&text(j, "id")))
+            .filter(|j| {
+                strategy_filter.get().is_empty() || text(j, "strategy") == strategy_filter.get()
+            })
+            .filter(|j| {
+                state.get().is_empty()
+                    || if state.get() == "active" {
+                        running(j)
+                    } else {
+                        text(j, "state") == state.get()
+                    }
+            })
+            .filter(|j| {
+                format!(
+                    "{} {}",
+                    text(j, "id"),
+                    strategy_names
+                        .with(|names| names.get(&text(j, "strategy")).cloned().unwrap_or_default())
+                )
+                .to_lowercase()
+                .contains(&search.get().to_lowercase())
+            })
             .collect::<Vec<_>>()
     });
+    Effect::new(move |_| {
+        if known_jobs.with_untracked(|ids| ids.is_empty()) && !matching_jobs.with(Vec::is_empty) {
+            known_jobs.set(matching_jobs.with(|jobs| jobs.iter().map(|j| text(j, "id")).collect()));
+        }
+    });
+    let jobs = Memo::new(move |_| {
+        matching_jobs.with(|all| {
+            all.iter()
+                .filter(|j| known_jobs.with(|ids| ids.contains(&text(j, "id"))))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    });
+    let arriving = move || {
+        matching_jobs.with(|all| {
+            all.iter()
+                .filter(|j| !known_jobs.with(|ids| ids.contains(&text(j, "id"))))
+                .count()
+        })
+    };
     let pages = move || jobs.with(|j| j.len().div_ceil(PAGE_SIZE).max(1));
     let current = move || page.get().min(pages() - 1);
     view! {
         <section class="panel evaluations">
         <div class="panel-heading"><div><h2>"Strategy evaluations"</h2><p>"Net results, with a separate validation window"</p></div><span class="subtle">"Select a row to inspect"</span></div>
-        <div class="tuning-sessions">
-        <For each={move||items(&snapshot.get(),"tuning").into_iter().map(|t|text(&t,"id")).collect::<Vec<_>>()} key={|id:&String|id.clone()} children={move|id:String|{
+        <div class="research-toolbar"><div class="research-tabs"><button class:active=move||!tuning_view.get() on:click=move|_|tuning_view.set(false)>"Backtests"<span>{move||jobs.with(Vec::len)}</span></button><button class:active=move||tuning_view.get() on:click=move|_|tuning_view.set(true)>"Tuning runs"<span>{move||tuning.with(Vec::len)}</span></button></div>
+        <div class="research-search"><input type="search" aria-label="Search runs" placeholder="Search strategy or run ID…" prop:value=move||search.get() on:input=move|ev|search.set(event_target_value(&ev))/><select aria-label="Run status" prop:value=move||state.get() on:change=move|ev|state.set(event_target_value(&ev))><option value="">"All statuses"</option><option value="active">"Active"</option><option value="completed">"Completed"</option><option value="failed">"Failed"</option><option value="cancelled">"Cancelled"</option></select></div>
+        <div class="research-scope"><StrategyPicker snapshot=snapshot selected=strategy_filter archived=true/><Show when=move||!strategy_filter.get().is_empty()><button class="secondary" on:click=move|_|strategy_filter.set(String::new())>"All strategies"</button></Show><div class="arrival-status"><Show when={move||arriving()>0} fallback=||view!{<span class="subtle">"Live updates · selection preserved"</span>}><button class="secondary" on:click=move|_|{known_jobs.set(indexed_jobs.with_untracked(|all|all.iter().map(|j|text(j,"id")).collect()));page.set(0);}>{move||format!("Show {} new runs",arriving())}</button></Show></div></div></div>
+        <Show when=move||tuning_view.get()><div class="tuning-sessions">
+        <For each={move||tuning.get().into_iter().skip(tuning_page.get()*5).take(5).map(|t|text(&t,"id")).collect::<Vec<_>>()} key={|id:&String|id.clone()} children={move|id:String|{
             let tuning = Memo::new(move |_| snapshot.with(|s|items(s,"tuning").into_iter().find(|t|text(t,"id")==id).unwrap_or(Value::Null)));
-            view!{<div class="tuning-session"><span>{move||{let t=tuning.get();format!("Tuning {} · {} · {} / {} trials completed · best {} {}{}",short(&text(&t,"id")),text(&t,"state"),t["completed"].as_u64().unwrap_or_else(||if t["state"]=="completed" {items(&t,"jobs").len() as u64}else{0}),t["trials"].as_u64().unwrap_or(20),score_label(&t),score_value(&t,&t["best"]),t["error"].as_str().map(|e|format!(" · {e}")).unwrap_or_default())}}</span><Show when=move||running(&tuning.get())><button class="secondary" on:click=move|_|action(format!("/api/tuning/{}/cancel",text(&tuning.get_untracked(),"id")),json!({}),status)>"Stop tuning"</button></Show></div>}
+            view!{<div class="tuning-session"><div class="tuning-summary"><strong>{move||strategy_names.with(|names|names.get(&text(&tuning.get(),"strategy")).cloned().unwrap_or_else(||short(&text(&tuning.get(),"strategy"))))}</strong><span>{move||{let t=tuning.get();format!("Tuning {} · {} · {} / {} trials completed · best {} {}{}",short(&text(&t,"id")),text(&t,"state"),t["completed"].as_u64().unwrap_or_else(||if t["state"]=="completed" {items(&t,"jobs").len() as u64}else{0}),t["trials"].as_u64().unwrap_or(20),score_label(&t),score_value(&t,&t["best"]),t["error"].as_str().map(|e|format!(" · {e}")).unwrap_or_default())}}</span><progress aria-label="Tuning progress" max=move||tuning.get()["trials"].as_u64().unwrap_or(20) value=move||tuning.with(|t|t["completed"].as_u64().unwrap_or_else(||if t["state"]=="completed" {items(t,"jobs").len() as u64}else{0}))></progress></div><Show when=move||running(&tuning.get())><button class="secondary" on:click=move|_|action(format!("/api/tuning/{}/cancel",text(&tuning.get_untracked(),"id")),json!({}),status)>"Stop tuning"</button></Show></div>}
         }}/>
-        </div>
-        <Show when=move||snapshot.with(|s|!items(s,"tuning").is_empty())><div class="evaluation-filters"><label class="check-label"><input type="checkbox" prop:checked=move||show_trials.get() on:change=move|ev|{show_trials.set(event_target_checked(&ev));page.set(0);}/>"Show individual tuning trials"</label><span>"Tuning trials are grouped above and hidden by default."</span></div></Show>
-        <Show when=move||!jobs.with(Vec::is_empty) fallback=||view!{<div class="empty"><h3>"Your research starts here"</h3><p>"Import market data and register a strategy with the TC CLI, then submit your first backtest."</p><code>"cargo run --bin tc -- demo"</code><p>"Demo creates explicitly labeled synthetic fixtures."</p></div>}>
+        </div><Show when=move||tuning.with(Vec::is_empty)><div class="empty">"No tuning runs match. Try another strategy or status."</div></Show><div class="evaluation-pagination"><span>{move||format!("{} tuning runs · Page {} of {}",tuning.with(Vec::len),tuning_page.get()+1,tuning.with(|t|t.len().div_ceil(5).max(1)))}</span><button class="secondary" disabled=move||tuning_page.get()==0 on:click=move|_|tuning_page.update(|p|*p=p.saturating_sub(1))>"Previous tuning"</button><button class="secondary" disabled={move||(tuning_page.get()+1)*5>=tuning.with(Vec::len)} on:click=move|_|tuning_page.update(|p|*p+=1)>"Next tuning"</button></div></Show>
+        <Show when=move||!tuning_view.get()>
+        <Show when=move||snapshot.with(|s|!items(s,"tuning").is_empty())><div class="evaluation-filters"><label class="check-label"><input type="checkbox" prop:checked=move||show_trials.get() on:change=move|ev|{show_trials.set(event_target_checked(&ev));page.set(0);}/>"Show individual tuning trials"</label><span>"Trials stay in Tuning runs unless you include them here."</span></div></Show>
+        <Show when=move||!jobs.with(Vec::is_empty) fallback=||view!{<div class="empty"><h3>"No matching backtests"</h3><p>"Try another strategy, search, or status. New evaluations appear here as they arrive."</p></div>}>
         <div class="table-scroll"><table><thead><tr><th>"STRATEGY / RUN"</th><th>"PERIOD"</th><th>"STATUS"</th><th>"OBJECTIVE SCORE"</th><th>"MAX DRAWDOWN"</th><th>"ELIGIBILITY"</th><th>""</th></tr></thead><tbody>
         <For each={move||jobs.with(|j|j.iter().skip(current()*PAGE_SIZE).take(PAGE_SIZE).map(|j|text(j,"id")).collect::<Vec<_>>())} key={|id:&String|id.clone()} children={move|id:String|{
             let select_id=StoredValue::new(id.clone());
             let job=Memo::new(move |_|jobs.with(|jobs|jobs.iter().find(|j|text(j,"id")==id).cloned().unwrap_or(Value::Null)));
-            let name=move||snapshot.with(|s|items(s,"strategies").iter().find(|s|s["id"]==job.get()["strategy"]).map(|s|text(&s["spec"],"name")).unwrap_or_else(||short(&text(&job.get(),"strategy"))));
+            let name=move||strategy_names.with(|names|names.get(&text(&job.get(),"strategy")).cloned().unwrap_or_else(||short(&text(&job.get(),"strategy"))));
             let growth=move||job.with(job_score);
             view!{<tr class="evaluation-row" data-run-id=select_id.get_value() class:selected=move||selected.get()==select_id.get_value() on:click=move|_|selected.set(select_id.get_value())>
             <td><button class="run-name" on:click=move|ev|{ev.stop_propagation();selected.set(select_id.get_value());}>{name}</button><small>{short(&select_id.get_value())}</small></td>
@@ -100,7 +270,8 @@ pub fn Evaluations(
             <td><Show when=move||running(&job.get())><button class="text-button" on:click=move|ev|{ev.stop_propagation();action(format!("/api/jobs/{}/cancel",select_id.get_value()),json!({}),status);}>"Cancel"</button></Show></td></tr>}
         }}/>
         </tbody></table></div>
-        <div class="evaluation-pagination"><span>{move||format!("Page {} of {} · {} recent runs",current()+1,pages(),jobs.with(Vec::len))}</span><button class="secondary" disabled=move||current()==0 on:click=move|_|page.set(current().saturating_sub(1))>"Previous runs"</button><button class="secondary" disabled={move||current()+1>=pages()} on:click=move|_|page.set(current()+1)>"Next runs"</button></div>
+        <div class="evaluation-pagination"><span>{move||format!("Page {} of {} · {} runs",current()+1,pages(),jobs.with(Vec::len))}</span><button class="secondary" disabled=move||current()==0 on:click=move|_|page.set(current().saturating_sub(1))>"Previous runs"</button><button class="secondary" disabled={move||current()+1>=pages()} on:click=move|_|page.set(current()+1)>"Next runs"</button></div>
+        </Show>
         </Show>
         </section>
     }

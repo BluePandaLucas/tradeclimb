@@ -42,6 +42,6 @@ pub fn ThemeToggle() -> impl IntoView {
     }
     let dark = move || mode.get() == "dark" || (mode.get() == "system" && system_dark.get());
     view! {<div class="theme-controls"><button class="theme-toggle" aria-label="Toggle dark mode" aria-pressed=move||dark().to_string() title="Toggle light and dark mode" on:click=move|_|{let next=if dark(){"light"}else{"dark"};mode.set(next.into());apply(next);}>
-        <span aria-hidden="true">{move||if dark(){"☀"}else{"☾"}}</span>
+        <span aria-hidden="true">{move||if dark(){view!{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>}.into_any()}else{view!{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M20.9 13.1A9 9 0 0 1 10.9 3.1 9 9 0 1 0 20.9 13.1Z"/></svg>}.into_any()}}</span>
     </button><button class="theme-system" aria-label="Use system theme" title="Follow your system theme" disabled=move||mode.get()=="system" on:click=move|_|{mode.set("system".into());apply("system");}>"System"</button></div>}
 }

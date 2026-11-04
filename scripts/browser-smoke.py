@@ -43,6 +43,8 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    toggle.wait_for()
    assert page.locator('html').get_attribute('data-theme')=='system'
    assert toggle.get_attribute('aria-pressed')=='true'
+   assert toggle.locator('svg circle').count()==1
+   assert toggle.inner_text()==''
    assert page.evaluate('getComputedStyle(document.body).backgroundColor') in ('rgba(0, 0, 0, 0)','rgb(17, 26, 30)')
    assert page.evaluate('getComputedStyle(document.documentElement).backgroundColor')=='rgb(17, 26, 30)'
    assert '0.22s' in page.locator('html').evaluate('el => getComputedStyle(el).transitionDuration')
@@ -51,6 +53,9 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.emulate_media(reduced_motion='no-preference')
    toggle.click()
    assert page.locator('html').get_attribute('data-theme')=='light'
+   assert toggle.locator('svg').count()==1
+   assert toggle.locator('svg circle').count()==0
+   assert toggle.inner_text()==''
    page.reload(wait_until='domcontentloaded')
    toggle.wait_for()
    assert page.locator('html').get_attribute('data-theme')=='light'
@@ -64,19 +69,24 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert page.locator('.stats').count()==0
    assert page.locator('.controls').count()==1
    assert 'Fixture' in page.get_by_label('Evaluation campaign').inner_text()
-   selects=page.locator('.controls select')
-   initial=selects.nth(0).input_value()
+   picker=page.locator('.controls .picker-trigger')
+   initial=next(strategy['id'] for strategy in data['strategies'] if strategy['id'][:8] in picker.inner_text())
+   initial_label=picker.inner_text()
    subprocess.run([str(root/'target/release/tc'),'--data-dir',folder,'builtin','--name','New fixture version'],check=True,capture_output=True)
    page.wait_for_timeout(2200)
-   assert selects.nth(0).input_value()==initial,'default selection changed while new versions arrived'
+   assert picker.inner_text()==initial_label,'default selection changed while new versions arrived'
    page.get_by_role('button',name='＋ Run backtest',exact=True).click()
    page.wait_for_timeout(1500)
    with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:submitted=json.load(response)
    assert submitted['jobs'][0]['strategy']==initial,'submitted strategy differs from visible selection'
-   value=next(option.get_attribute('value') for option in selects.nth(0).locator('option').all() if option.get_attribute('value')!=initial)
-   selects.nth(0).select_option(value)
+   value=next(strategy['id'] for strategy in data['strategies'] if strategy['id']!=initial)
+   picker.click()
+   page.get_by_role('searchbox',name='Search strategies and versions').fill(value)
+   page.locator('dialog[open] .version-option').click()
    page.wait_for_timeout(2200)
-   assert selects.nth(0).input_value()==value,'strategy selection reset after stream update'
+   assert value[:8] in picker.inner_text(),'strategy selection reset after stream update'
+   arrivals=page.get_by_role('button',name='Show',exact=False).filter(has_text='new runs')
+   if arrivals.count():arrivals.click()
    page.get_by_role('button',name='Trend explorer',exact=True).first.click()
    page.get_by_role('img',name='Net portfolio equity').wait_for()
    page.get_by_label('Chart window').select_option('7')
@@ -96,7 +106,13 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.on('request',lambda request:tune_requests.append(request.url) if request.method=='POST' and request.url.endswith('/api/tune') else None)
    tune=page.get_by_role('button',name='Tune parameters · 20 trials',exact=True)
    tune.evaluate('el => { el.click(); el.click(); }')
-   page.wait_for_function('async () => { const d=await (await fetch("/api/overview")).json(); return d.tuning.some(t => (t.jobs || []).length >= 11); }',timeout=60000)
+   deadline=time.monotonic()+100
+   while time.monotonic()<deadline:
+    with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:tuning_data=json.load(response)
+    if any(len(t.get('jobs',[]))>=11 for t in tuning_data['tuning']):break
+    page.wait_for_timeout(500)
+   else:raise AssertionError('tuning did not produce enough trials')
+   page.wait_for_timeout(1200)
    page.get_by_label('Show individual tuning trials').wait_for()
    assert len(tune_requests)==1,'duplicate tuning request'
    assert evaluation_rows.count()==baseline,'tuning flooded ordinary evaluation rows'
@@ -113,9 +129,11 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    # The name remains a keyboard-accessible button as well as row clicks.
    row.get_by_role('button').first.focus()
    page.keyboard.press('Enter')
+   page.get_by_role('button',name='Tuning runs',exact=False).click()
    stop=page.get_by_role('button',name='Stop tuning',exact=True)
    if stop.count():
     stop.first.click()
+   page.locator('.research-tabs button').first.click()
    page.get_by_label('Show individual tuning trials').uncheck()
    assert evaluation_rows.count()==baseline
    page.get_by_role('button',name='Overview',exact=True).click()
@@ -126,7 +144,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert page.locator('.stats').count()==1
    assert page.locator('.controls').count()==0
    page.get_by_role('button',name='Backtests',exact=True).click()
-   assert selects.nth(0).input_value()==value,'selection lost after navigating tabs'
+   assert value[:8] in picker.inner_text(),'selection lost after navigating tabs'
    page.get_by_role('button',name='Leaderboard',exact=True).click()
    page.get_by_role('heading',name='Strategy leaderboard',exact=True).wait_for()
    assert page.locator('.stats,.controls,.run-detail').count()==0
@@ -170,8 +188,12 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    manifest_path=next((state/'datasets').glob('*/manifest.json'))
    provenance=json.loads(manifest_path.read_text());provenance['synthetic']=False;provenance['venue']='bitvavo';manifest_path.write_text(json.dumps(provenance))
    page.wait_for_function('async () => (await (await fetch("/api/overview")).json()).paper_candidates.length > 0')
-   start=page.get_by_role('button',name='Approve Trend explorer',exact=True)
-   strategy_id=start.get_attribute('data-strategy-id')
+   with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:ready=json.load(response)
+   strategy_id=next(s['id'] for s in ready['strategies'] if s['spec']['name']=='Trend explorer')
+   page.locator('.paper-grid .picker-trigger').click()
+   page.get_by_role('searchbox',name='Search strategies and versions').fill(strategy_id)
+   page.locator('dialog[open] .version-option').click()
+   start=page.get_by_role('button',name='Approve paper session',exact=True)
    start.click()
    session=page.locator('.paper-session').first
    session.wait_for()

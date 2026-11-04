@@ -65,33 +65,46 @@ fn paper_action(
 }
 #[component]
 pub fn PaperPanel(
-    strategies: Vec<Value>,
-    papers: Vec<Value>,
     status: RwSignal<String>,
     pending: RwSignal<Vec<String>>,
     snapshot: RwSignal<Value>,
 ) -> impl IntoView {
-    let sessions = papers.clone();
-    let candidates = snapshot.with_untracked(|s| items(s, "paper_candidates"));
-    let mut strategies = strategies;
-    strategies.sort_by(|a, b| {
-        let score = |s: &Value| {
-            candidates
-                .iter()
-                .find(|c| c["strategy"] == s["id"])
-                .and_then(|c| c["sharpe"].as_f64())
-                .unwrap_or(f64::NEG_INFINITY)
-        };
-        score(b).total_cmp(&score(a))
+    let strategies = Memo::new(move |_| snapshot.with(|s| items(s, "strategies")));
+    let papers = Memo::new(move |_| snapshot.with(|s| items(s, "paper")));
+    let selected = RwSignal::new(String::new());
+    let candidates = Memo::new(move |_| snapshot.with(|s| items(s, "paper_candidates")));
+    let candidate = Memo::new(move |_| {
+        candidates.with(|all| {
+            all.iter()
+                .find(|c| text(c, "strategy") == selected.get())
+                .cloned()
+        })
     });
-    view! {<section class="panel"><div class="panel-heading"><div><h2>"Paper portfolios"</h2><p>"Approve an eligible Bitvavo development evaluation to start paper trading. Maximum drawdown: 15%; growth aspiration: 15%. Candidates rank by Sharpe; validation risk is not certified by its scalar score."</p></div></div>
-    <div class="paper-grid">{strategies.iter().filter(|s|s["archived"]!=true).map(|s|{
-        let id=text(s,"id");let candidate=candidates.iter().find(|c|c["strategy"]==id);let approval_job=candidate.map(|c|text(c,"job")).unwrap_or_default();let qualifies=candidate.is_some();let existing=sessions.iter().any(|p|text(p,"strategy")==id && active(p));let key=format!("start:{id}");let disabled_key=key.clone();let label_key=key.clone();let name=text(&s["spec"],"name");let name_label=name.clone();
-        view!{<button class="secondary" data-strategy-id=id.clone() disabled=move||!qualifies||existing||pending.with(|keys|keys.contains(&disabled_key)) on:click=move|_|paper_action("/api/paper".into(),json!({"strategy":id,"job":approval_job,"approve":true}),key.clone(),status,pending,snapshot)>{move||if pending.with(|keys|keys.contains(&label_key)){format!("Starting {name_label}…")}else if existing{format!("{name_label} · active")}else if !qualifies {format!("{name_label} · evaluation required")} else{format!("Approve {name_label}")}}</button>}
-    }).collect_view()}</div>
-    {if papers.is_empty(){view!{<div class="empty">"No paper portfolios yet. Start a strategy to follow live market observations."</div>}.into_any()}
-    else{papers.into_iter().map(|p|{
-        let id=text(&p,"id");let strategy_id=text(&p,"strategy");let name=strategies.iter().find(|s|text(s,"id")==strategy_id).map(|s|text(&s["spec"],"name")).unwrap_or_else(||short(&strategy_id));let state=text(&p,"state");let can_stop=matches!(state.as_str(),"starting"|"running");let stopping=state=="stopping";let stopped=state=="stopped";
+    Effect::new(move |_| {
+        if !strategies.with(|all| {
+            all.iter()
+                .any(|s| text(s, "id") == selected.get() && s["archived"] != true)
+        }) {
+            selected.set(
+                candidates
+                    .with(|all| all.first().map(|c| text(c, "strategy")))
+                    .unwrap_or_else(|| {
+                        strategies.with(|all| {
+                            all.iter()
+                                .find(|s| s["archived"] != true)
+                                .map(|s| text(s, "id"))
+                                .unwrap_or_default()
+                        })
+                    }),
+            );
+        }
+    });
+    view! {<section class="panel"><div class="panel-heading"><div><h2>"Paper portfolios"</h2><p>"Approve an eligible Bitvavo development evaluation. Maximum drawdown: 15%; growth aspiration: 15%. Candidates qualify by Sharpe; scalar validation does not certify risk."</p></div></div>
+    <div class="paper-grid"><StrategyPicker snapshot=snapshot selected=selected/>
+    <button class="secondary" data-strategy-id=move||selected.get() disabled=move||candidate.get().is_none() || selected.get().is_empty() || pending.with(|keys|keys.contains(&format!("start:{}",selected.get()))) || papers.with(|all|all.iter().any(|p|text(p,"strategy")==selected.get() && active(p))) on:click=move|_|{let id=selected.get_untracked();paper_action("/api/paper".into(),json!({"strategy":id,"job":candidate.get_untracked().map(|c|text(&c,"job")).unwrap_or_default(),"approve":true}),format!("start:{id}"),status,pending,snapshot);}>{move||if pending.with(|keys|keys.contains(&format!("start:{}",selected.get()))) {"Starting…"}else if papers.with(|all|all.iter().any(|p|text(p,"strategy")==selected.get() && active(p))) {"Session active"}else if candidate.get().is_none(){"Evaluation required"}else{"Approve paper session"}}</button></div>
+    {move||if papers.with(Vec::is_empty){view!{<div class="empty">"No paper portfolios yet. Start a strategy to follow live market observations."</div>}.into_any()}
+    else{papers.get().into_iter().map(|p|{
+        let id=text(&p,"id");let strategy_id=text(&p,"strategy");let name=strategies.with(|all|all.iter().find(|s|text(s,"id")==strategy_id).map(|s|text(&s["spec"],"name")).unwrap_or_else(||short(&strategy_id)));let state=text(&p,"state");let can_stop=matches!(state.as_str(),"starting"|"running");let stopping=state=="stopping";let stopped=state=="stopped";
         let stop_id=id.clone();let key=format!("stop:{id}");let disabled_key=key.clone();let label_key=key.clone();let sim=&p["simulator"];let updated=if p["updated_at"].as_i64().unwrap_or(0)>0 {p["updated_at"].clone()}else{items(sim,"equity").last().map(|point|point["time"].clone()).unwrap_or_else(||p["created_at"].clone())};
         let activity=if text(&p,"activity").is_empty(){match state.as_str(){"running"=>"Live · waiting for market observations","stopped"=>"Session stopped","halted"=>"Session halted",_=>"Connecting to market data"}.to_string()}else{text(&p,"activity")};
         let equity=items(sim,"equity").last().and_then(|point|point["equity"].as_f64()).unwrap_or(10_000.0);let fills=items(sim,"fills").len();

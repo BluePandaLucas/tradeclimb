@@ -264,7 +264,12 @@ pub(crate) fn allowed(store: &Store, principal: &Principal, method: &str, path: 
     if principal.role == Role::Owner {
         return true;
     }
-    if method == "GET" && matches!(path, "/api/overview" | "/api/events" | "/api/session") {
+    if method == "GET"
+        && matches!(
+            path,
+            "/api/overview" | "/api/events" | "/api/session" | "/api/jobs/index"
+        )
+    {
         return true;
     }
     if method == "POST" && matches!(path, "/api/jobs" | "/api/tune") {

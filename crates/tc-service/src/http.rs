@@ -208,6 +208,7 @@ fn routes(store: Store) -> Router {
         .route("/api/overview", get(overview))
         .route("/api/events", get(events))
         .route("/api/jobs", post(submit))
+        .route("/api/jobs/index", get(job_index))
         .route("/api/jobs/{id}/cancel", post(cancel))
         .route("/api/jobs/{id}", get(job))
         .route("/api/jobs/{id}/trades", get(trades))
@@ -416,13 +417,15 @@ async fn shutdown_signal() {
 }
 
 fn overview_value(store: &Store) -> Result<Value> {
+    let counts = store.db()?.query_row("SELECT COUNT(*), COALESCE(SUM(json_extract(data, '$.state') = 'completed'), 0), COALESCE(SUM(json_extract(data, '$.state') IN ('queued', 'preparing', 'running')), 0) FROM jobs", [], |row| Ok(json!({"total":row.get::<_,u64>(0)?,"completed":row.get::<_,u64>(1)?,"active":row.get::<_,u64>(2)?})))?;
     Ok(
-        json!({"leaderboards":leaderboard::groups(store)?,"strategies":store.objects::<RegisteredStrategy>("strategy")?,"campaigns":store.objects::<Campaign>("campaign")?,"jobs":store.jobs()?.into_iter().take(50).collect::<Vec<_>>(),"paper":store.objects::<PaperSession>("paper")?,"datasets":tc_data::list(&store.root)?,"validation":store.ledger()?,"tuning":store.objects::<Value>("tuning")?,"paper_candidates":store.paper_candidates()?,"paper_approvals":store.objects::<Value>("paper_approval")?,"time":now()}),
+        json!({"job_counts":counts,"leaderboards":leaderboard::groups(store)?,"strategies":store.objects::<RegisteredStrategy>("strategy")?,"campaigns":store.objects::<Campaign>("campaign")?,"jobs":store.jobs()?.into_iter().take(50).collect::<Vec<_>>(),"paper":store.objects::<PaperSession>("paper")?,"datasets":tc_data::list(&store.root)?,"validation":store.ledger()?,"tuning":store.objects::<Value>("tuning")?,"paper_candidates":store.paper_candidates()?,"paper_approvals":store.objects::<Value>("paper_approval")?,"time":now()}),
     )
 }
 fn scoped_overview(store: &Store, principal: &auth::Principal) -> Result<Value> {
     let mut value = overview_value(store)?;
     if principal.role == auth::Role::Agent {
+        value["job_counts"]=store.db()?.query_row("SELECT COUNT(*),COALESCE(SUM(json_extract(data,'$.state')='completed'),0),COALESCE(SUM(json_extract(data,'$.state') IN ('queued','preparing','running')),0) FROM jobs WHERE json_extract(data,'$.period')='development' AND NOT(json_extract(data,'$.config.start')<?1 AND json_extract(data,'$.config.end')>?2)",params![FINAL_TEST_END,FINAL_TEST_START],|r|Ok(json!({"total":r.get::<_,u64>(0)?,"completed":r.get::<_,u64>(1)?,"active":r.get::<_,u64>(2)?})))?;
         for field in ["jobs", "leaderboards"] {
             if let Some(rows) = value[field].as_array_mut() {
                 rows.retain(|row| row["period"] == "development");
@@ -472,6 +475,26 @@ async fn events(
             Ok(Event::default().event("snapshot").data(data))
         });
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+/// Full history without curves, scoped before delivery to development agents.
+async fn job_index(
+    State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
+) -> Api<Vec<Value>> {
+    let db = app.store.db()?;
+    let mut query=db.prepare("SELECT json_remove(data,'$.config','$.result.equity','$.result.fills','$.result.benchmarks') FROM jobs WHERE json_extract(data,'$.config.start') IS NOT NULL AND json_extract(data,'$.config.end') IS NOT NULL AND NOT(json_extract(data,'$.config.start')<?1 AND json_extract(data,'$.config.end')>?2) AND (?3 OR json_extract(data,'$.period')='development') ORDER BY rowid DESC")?;
+    let rows = query
+        .query_map(
+            params![
+                FINAL_TEST_END,
+                FINAL_TEST_START,
+                principal.role == auth::Role::Owner
+            ],
+            |r| r.get::<_, String>(0),
+        )?
+        .map(|r| Ok(serde_json::from_str::<Value>(&r?)?))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Json(rows))
 }
 async fn submit(
     State(app): State<Arc<App>>,
@@ -943,6 +966,45 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+    #[tokio::test]
+    async fn history_index_includes_old_runs_without_chart_payloads() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let db = store.db().unwrap();
+        for n in 0..650 {
+            let id = format!("job-{n}");
+            let data = json!({"id":id,"strategy":"s","period":"development","state":"completed","config":{"start":0,"end":60000,"large":"execution"},"result":{"metrics":{"net_cagr":0.1},"equity":[1,2],"fills":[3],"benchmarks":[4]}});
+            db.execute(
+                "INSERT INTO jobs VALUES(?1,?1,?1,?2)",
+                rusqlite::params![id, data.to_string()],
+            )
+            .unwrap();
+        }
+        let response = routes(store.clone())
+            .oneshot(
+                owner_request(&store)
+                    .uri("/api/jobs/index")
+                    .header("host", "localhost")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        let rows: Vec<Value> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(rows.len(), 650);
+        assert_eq!(rows[649]["id"], "job-0");
+        assert_eq!(rows[0]["result"]["metrics"]["net_cagr"], 0.1);
+        for row in rows {
+            assert!(row.get("config").is_none());
+            assert!(row["result"].get("equity").is_none());
+            assert!(row["result"].get("fills").is_none());
+            assert!(row["result"].get("benchmarks").is_none());
+        }
     }
     #[tokio::test]
     async fn validation_http_never_loads_local_detail_files() {
