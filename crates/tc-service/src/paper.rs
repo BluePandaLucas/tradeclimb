@@ -434,9 +434,16 @@ fn run_paper_inner(store: &Store, id: &str, control: &PaperControl) -> Result<()
     let mut session: PaperSession = store.get("paper", id)?;
     let registered: RegisteredStrategy = store.get("strategy", &session.strategy)?;
     let spec = store.resolve_strategy(&registered)?;
+    let _broker = matches!(spec.kind, StrategyKind::Executable { .. })
+        .then(|| broker::ModelBroker::start(store.clone(), id))
+        .transpose()?;
     let (_lease, mut strategy): (Option<ProcessGroupGuard>, Box<dyn Strategy>) = match &spec.kind {
         StrategyKind::Executable { path } => {
-            let process = tc_engine::ProcessStrategy::spawn_scoped(path, &spec, Some(id))?;
+            let process = tc_engine::ProcessStrategy::spawn_with_broker(
+                path,
+                &spec,
+                _broker.as_ref().map(|b| b.path()),
+            )?;
             let pid = process.process_id();
             store.put(
                 "paper_lease",
@@ -728,6 +735,7 @@ mod lifecycle_tests {
     }
     #[test]
     #[cfg(unix)]
+    #[ignore = "requires Bubblewrap and delegated systemd user cgroups"]
     fn stop_interrupts_a_blocked_external_strategy_without_network_access() {
         use std::os::unix::fs::PermissionsExt;
         let (directory, store, _) = fixture();

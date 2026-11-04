@@ -1,6 +1,6 @@
 # Running TradeClimb locally
 
-TradeClimb v1 runs as a native Rust service and browser WASM application. It never sends orders to Bitvavo. Account keys are not needed. Native strategy code, Cargo build scripts, the local filesystem, and LAN users are trusted in this release.
+TradeClimb v1 runs as a native Rust service and browser WASM application. It never sends orders to Bitvavo. Account keys are not needed. External strategies execute inside a Linux sandbox. Use the isolated build command for untrusted strategy projects; manually running Cargo still executes build scripts on the host. The service, trusted SDK/compiler/cache, local owner account, and LAN users remain trusted; authentication and isolation of development agents are separate V2 work.
 
 ## Start the interface
 
@@ -61,6 +61,43 @@ target/release/tc campaign DATASET_ID --objective net_cagr --target-cagr 0.20
 ```
 
 The target is a fraction: `0.20` means 20%. A new objective does not reset the global validation budget or change the simulation's risk/cost rules.
+
+## Strategy isolation
+
+External historical and paper strategies require Linux, `/usr/bin/bwrap`, util-linux `prlimit`, and a running systemd user manager with delegated memory/CPU/pids controllers. Install the distribution's `bubblewrap` and `dbus-user-session` packages and run TC from a normal user session with `XDG_RUNTIME_DIR` set. On this machine the existing `bwrap-userns-restrict` AppArmor profile permits Bubblewrap without changing global namespace restrictions. Headless services also need their user manager/bus available; run this probe as the same user/session as the service:
+
+```bash
+target/release/tc sandbox-check
+```
+
+A failed prerequisite or confinement launch fails the external run; there is no trusted-code fallback. Built-in strategies are part of the trusted evaluator and do not require an external sandbox. The sandbox gets a new user/PID/network/IPC namespace, no capabilities or nested user namespaces, sanitized launcher/strategy environments, a read-only root, system executables/libraries, private `/proc` and `/dev`, the one strategy executable, and bounded scratch space. The data directory, owner home, account credentials, and host network are not mounted. OS executable/library directories are a trusted runtime image and must not contain private research data.
+
+| Limit | External strategy | Isolated build |
+| --- | --- | --- |
+| Aggregate memory, including tmpfs | 512 MiB | 4 GiB |
+| Swap | Disabled | Disabled |
+| Aggregate tasks/threads | 32 | 128 |
+| Aggregate CPU quota | One core | Two cores |
+| `/tmp` | 16 MiB | 256 MiB |
+| Build output tmpfs | None | 2 GiB |
+| Per-file size | 16 MiB | 512 MiB |
+| Open descriptors per process | 128 | 128 |
+| Deadline | 45 seconds per strategy frame; historical supervisor 30 minutes | 30 minutes |
+
+Cgroup cleanup kills all descendants, including processes that create another session. Bubblewrap also kills its PID namespace on abrupt owner death. Paper strategies have no overall 30-minute lifetime; their frame timeout and resource limits still apply. The model broker uses a separate, per-process socket bound to the owning run/session. It retains existing provider mapping, cache, and 64-call scope budgets, accepts no caller-selected scope or provider URL, limits request/response sizes, and bounds slow-client reads/writes and shutdown. Recompile SDK users to use this socket transport; legacy binaries that attempt direct HTTP cannot reach the host network.
+
+Build an untrusted strategy without running Cargo or build scripts directly on the host:
+
+```bash
+target/release/tc build --project examples/strategy --sdk-root . \
+  --bin tc-example-strategy --output var/builds/strategy
+```
+
+Builds snapshot regular source files (no symlinks or special files; at most 10,000 files, 20,000 entries, 100 MiB, 10 MiB per file, and 64 nested directories). `target`, `.git`, `.env`, `.env.*`, and `var` are excluded. Keep private data outside source trees, compiler directories, and Cargo caches. The trusted SDK mounts contain only this workspace's manifest, tc-core and tc-sdk snapshots; the strategy is mounted at `/workspace/examples/strategy`, preserving the example's relative SDK paths. Only Cargo's registry `src`, `cache`, and `index` are mounted, not Cargo credentials/config or Git caches. The selected compiler sysroot is read-only. Builds run `--offline --frozen`; provision reviewed dependencies in the trusted cache first. There is no automatic dependency fetching or retry with network access. Lockfiles are mandatory; other host path dependencies are unavailable.
+
+Cargo output remains on bounded tmpfs. Only a successful Linux executable (at most 64 MiB) is copied to the selected host output path. Build metadata reports its SHA-256; registration retains those executable bytes as before. Isolated builds are not a claim of compiler reproducibility. The trusted platform/SDK itself is built with the normal repository workflow.
+
+`./scripts/check-sandbox` runs the real prerequisite probe, adversarial resource/confinement tests, an offline malicious-build-script fixture, and scoped model calls through historical workers. These Linux tests are explicitly ignored in the portable Rust suite and run separately on a configured host and in CI. This boundary does not isolate an unsandboxed development agent running as the owner: owner/agent account separation, authentication, and validation storage policy remain necessary V2 work.
 
 ## Register and evaluate strategies
 

@@ -1,9 +1,12 @@
 //! Local control plane: durable jobs, validation ledger, and paper portfolios.
+mod broker;
+mod build;
 mod http;
 mod inference;
 mod leaderboard;
 mod paper;
 use anyhow::{Context, Result, ensure};
+pub use build::{build_strategy, sandbox_check};
 pub use http::serve;
 pub use inference::infer;
 pub use paper::{PaperSession, run_paper};
@@ -494,30 +497,54 @@ impl Store {
     }
 }
 fn collect_source(root: &Path, path: &Path, out: &mut Vec<(String, Vec<u8>)>) -> Result<()> {
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if ["target", ".git", ".env", "var"].contains(&name.to_string_lossy().as_ref())
-            || name.to_string_lossy().starts_with(".env.")
-        {
-            continue;
+    fn visit(
+        root: &Path,
+        path: &Path,
+        out: &mut Vec<(String, Vec<u8>)>,
+        total: &mut usize,
+        depth: usize,
+        entries: &mut usize,
+    ) -> Result<()> {
+        ensure!(depth <= 64, "strategy source nesting exceeds limit");
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            *entries += 1;
+            ensure!(*entries <= 20_000, "too many source entries");
+            let name = entry.file_name();
+            if ["target", ".git", ".env", "var"].contains(&name.to_string_lossy().as_ref())
+                || name.to_string_lossy().starts_with(".env.")
+            {
+                continue;
+            }
+            let kind = entry.file_type()?;
+            ensure!(
+                !kind.is_symlink(),
+                "strategy source symlinks are not supported"
+            );
+            if kind.is_dir() {
+                visit(root, &entry.path(), out, total, depth + 1, entries)?;
+            } else {
+                ensure!(
+                    kind.is_file(),
+                    "strategy source must contain only regular files"
+                );
+                ensure!(out.len() < 10_000, "too many strategy source files");
+                let mut bytes = vec![];
+                fs::File::open(entry.path())?
+                    .take(10 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)?;
+                ensure!(bytes.len() <= 10 * 1024 * 1024, "source file too large");
+                *total += bytes.len();
+                ensure!(*total <= 104_857_600, "strategy source exceeds 100 MiB");
+                out.push((
+                    entry.path().strip_prefix(root)?.to_string_lossy().into(),
+                    bytes,
+                ));
+            }
         }
-        ensure!(
-            !entry.file_type()?.is_symlink(),
-            "strategy source symlinks are not supported"
-        );
-        if entry.file_type()?.is_dir() {
-            collect_source(root, &entry.path(), out)?;
-        } else {
-            let bytes = fs::read(entry.path())?;
-            ensure!(bytes.len() <= 10 * 1024 * 1024, "source file too large");
-            out.push((
-                entry.path().strip_prefix(root)?.to_string_lossy().into(),
-                bytes,
-            ));
-        }
+        Ok(())
     }
-    Ok(())
+    visit(root, path, out, &mut 0, 0, &mut 0)
 }
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     if !source.exists() {
@@ -557,7 +584,19 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
         .into_iter()
         .filter(|c| c.time >= warmup_start && c.time < request.config.end)
         .collect();
-    let mut strategy = tc_engine::strategy(&request.spec)?;
+    let _broker = matches!(request.spec.kind, StrategyKind::Executable { .. })
+        .then(|| broker::ModelBroker::start(store.clone(), id))
+        .transpose()?;
+    let mut strategy: Box<dyn tc_sdk::Strategy> = match &request.spec.kind {
+        StrategyKind::Executable { path } => {
+            Box::new(tc_engine::ProcessStrategy::spawn_with_broker(
+                path,
+                &request.spec,
+                _broker.as_ref().map(|b| b.path()),
+            )?)
+        }
+        _ => tc_engine::strategy(&request.spec)?,
+    };
     let mut last = Instant::now() - Duration::from_secs(1);
     let report = tc_engine::backtest(
         &relevant,

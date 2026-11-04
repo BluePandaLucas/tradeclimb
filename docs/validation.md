@@ -1,5 +1,7 @@
 # TradeClimb v1 validation
 
+This document records the V1 baseline. Current V2 strategy/build confinement and its separate tests are described in [operations](operations.md#strategy-isolation) and [V2 progress](v2.md).
+
 The first release is a local research and paper-trading foundation. Validation establishes platform behavior, not a profitable trading strategy. Synthetic fixtures, public live-feed checks, and historical data checks serve different purposes.
 
 ## Automated checks

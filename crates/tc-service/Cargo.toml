@@ -30,6 +30,9 @@ tc-data = { version = "0.1.0", path = "../tc-data" }
 
 flate2.workspace = true
 
-[dev-dependencies]
+tc-sandbox = { version = "0.1.0", path = "../tc-sandbox" }
+
 tempfile.workspace = true
+
+[dev-dependencies]
 tower.workspace = true

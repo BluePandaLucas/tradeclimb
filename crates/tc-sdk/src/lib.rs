@@ -28,7 +28,7 @@ pub fn read_message<T: serde::de::DeserializeOwned>(reader: &mut impl Read) -> R
     reader.read_exact(&mut bytes)?;
     Ok(serde_json::from_slice(&bytes)?)
 }
-/// Run a trusted external strategy. Stdout is reserved for the protocol.
+/// Run an external strategy. Stdout is reserved for the protocol.
 pub fn serve(mut strategy: impl Strategy) -> Result<()> {
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
@@ -348,6 +348,10 @@ pub struct HttpModelClient {
 }
 impl ModelClient for HttpModelClient {
     fn infer(&mut self, request: &ModelRequest) -> Result<ModelResponse> {
+        #[cfg(unix)]
+        if let Some(path) = std::env::var_os("TC_MODEL_SOCKET") {
+            return SocketModelClient { path: path.into() }.infer(request);
+        }
         let response = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(35))
             .build()?
@@ -357,6 +361,30 @@ impl ModelClient for HttpModelClient {
             .error_for_status()?
             .json()?;
         Ok(response)
+    }
+}
+/// Scoped broker protocol: no run ID, provider URL, or credentials are accepted.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(tag = "status", content = "value", rename_all = "snake_case")]
+pub enum ModelReply {
+    Ok(ModelResponse),
+    Error(String),
+}
+#[cfg(unix)]
+pub struct SocketModelClient {
+    pub path: std::path::PathBuf,
+}
+#[cfg(unix)]
+impl ModelClient for SocketModelClient {
+    fn infer(&mut self, request: &ModelRequest) -> Result<ModelResponse> {
+        let mut stream = std::os::unix::net::UnixStream::connect(&self.path)?;
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(35)))?;
+        stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
+        write_message(&mut stream, request)?;
+        match read_message(&mut stream)? {
+            ModelReply::Ok(response) => Ok(response),
+            ModelReply::Error(error) => bail!(error),
+        }
     }
 }
 #[cfg(test)]
@@ -515,9 +543,13 @@ impl HttpModelClient {
         Ok(Self {
             base_url: std::env::var("TC_MODEL_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:8080".into()),
-            scope: std::env::var("TC_MODEL_SCOPE").map_err(|_| {
-                anyhow::anyhow!("model client requires a TC-managed run/session scope")
-            })?,
+            scope: if std::env::var_os("TC_MODEL_SOCKET").is_some() {
+                String::new()
+            } else {
+                std::env::var("TC_MODEL_SCOPE").map_err(|_| {
+                    anyhow::anyhow!("model client requires a TC-managed run/session scope")
+                })?
+            },
         })
     }
 }

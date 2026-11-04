@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+target/release/tc sandbox-check
+cargo test --locked -p tc-sandbox -- --ignored
+cargo test --locked -p tc-service stop_interrupts_a_blocked_external_strategy_without_network_access -- --ignored
+python3 scripts/sandbox-smoke.py

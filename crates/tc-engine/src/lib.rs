@@ -3,14 +3,7 @@ use anyhow::{Result, ensure};
 use chrono::{DateTime, Datelike, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-use std::{
-    collections::BTreeMap,
-    process::{Child, Command, Stdio},
-    sync::mpsc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, process::Stdio, sync::mpsc, time::Duration};
 use tc_core::*;
 use tc_sdk::Strategy;
 
@@ -525,37 +518,42 @@ fn metrics(sim: &Simulator) -> Result<Metrics> {
         months,
     })
 }
-/// External trusted code runs in a child; timeout kills the child, never the API.
+/// External code runs in a confined child; timeout tears down its cgroup.
 pub struct ProcessStrategy {
-    child: Child,
+    sandbox: tc_sandbox::SandboxedChild,
     request: mpsc::Sender<Frame>,
     response: mpsc::Receiver<Result<Decision>>,
 }
 impl ProcessStrategy {
     pub fn process_id(&self) -> u32 {
-        self.child.id()
+        self.sandbox.child.id()
     }
     pub fn spawn(path: &str, spec: &StrategySpec) -> Result<Self> {
-        Self::spawn_scoped(path, spec, None)
+        Self::spawn_with_broker(path, spec, None)
     }
-    pub fn spawn_scoped(path: &str, spec: &StrategySpec, scope: Option<&str>) -> Result<Self> {
-        let mut command = Command::new(path);
-        if let Some(scope) = scope {
-            command.env("TC_MODEL_SCOPE", scope);
-            #[cfg(unix)]
-            command.process_group(0);
-        }
-        let mut child = command
-            .env("TC_STRATEGY_SPEC", serde_json::to_string(spec)?)
+    pub fn spawn_with_broker(
+        path: &str,
+        spec: &StrategySpec,
+        broker: Option<&std::path::Path>,
+    ) -> Result<Self> {
+        let mut sandbox = tc_sandbox::Sandbox::strategy(
+            std::path::Path::new(path),
+            &serde_json::to_string(spec)?,
+            broker,
+        )?;
+        sandbox
+            .command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stderr(Stdio::null());
+        let mut child = sandbox.spawn()?;
         let mut input = child
+            .child
             .stdin
             .take()
             .ok_or_else(|| anyhow::anyhow!("missing stdin"))?;
         let mut output = child
+            .child
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("missing stdout"))?;
@@ -572,7 +570,7 @@ impl ProcessStrategy {
             }
         });
         Ok(Self {
-            child,
+            sandbox: child,
             request: tx,
             response,
         })
@@ -584,12 +582,6 @@ impl Strategy for ProcessStrategy {
         let reply = self.response.recv_timeout(Duration::from_secs(45))??;
         ensure!(reply.protocol == PROTOCOL, "strategy protocol mismatch");
         Ok(reply.intents)
-    }
-}
-impl Drop for ProcessStrategy {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
     }
 }
 pub fn strategy(spec: &StrategySpec) -> Result<Box<dyn Strategy>> {

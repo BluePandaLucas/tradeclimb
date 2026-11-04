@@ -15,3 +15,5 @@ rust_decimal.workspace = true
 chrono.workspace = true
 tc-core = { version = "0.1.0", path = "../tc-core" }
 tc-sdk = { version = "0.1.0", path = "../tc-sdk" }
+
+tc-sandbox = { version = "0.1.0", path = "../tc-sandbox" }

@@ -35,6 +35,19 @@ enum Action {
         accept_gaps: bool,
     },
     Demo,
+    /// Verify local namespace and cgroup prerequisites without running strategy code.
+    SandboxCheck,
+    /// Compile a strategy offline inside the Linux sandbox, including build scripts.
+    Build {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long, default_value = ".")]
+        sdk_root: PathBuf,
+        #[arg(long)]
+        bin: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
     Register {
         #[arg(long)]
         name: String,
@@ -112,6 +125,7 @@ fn main() -> Result<()> {
         .init();
     let store = Store::open(&args.data_dir)?;
     match args.command {
+        Action::SandboxCheck => print(&tc_service::sandbox_check()?),
         Action::Worker { id } => {
             uuid_check(&id)?;
             tc_service::worker(&store.root, &id)
@@ -183,6 +197,14 @@ fn main() -> Result<()> {
                 &serde_json::json!({"dataset":manifest.id,"campaign":campaign.id,"strategies":strategies,"warning":"SYNTHETIC fixture only; run import for Bitvavo research"}),
             )
         }
+        Action::Build {
+            project,
+            sdk_root,
+            bin,
+            output,
+        } => print(&tc_service::build_strategy(
+            &project, &sdk_root, &bin, &output,
+        )?),
         Action::Register {
             name,
             description,

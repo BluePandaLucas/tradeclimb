@@ -13,7 +13,7 @@ cargo run --locked --release --bin tc -- demo
 ./scripts/start
 ```
 
-Open **http://127.0.0.1:8080**. This development checkout also has an isolated prepared demo: run `TC_DATA_DIR=var/demo ./scripts/start` to inspect it without mixing synthetic runs into the main research directory. To enable unauthenticated trusted-LAN access, pass `--bind 0.0.0.0:8080` to the start script. Native strategy code is trusted in v1; sandboxing is the first v2 priority.
+Open **http://127.0.0.1:8080**. This development checkout also has an isolated prepared demo: run `TC_DATA_DIR=var/demo ./scripts/start` to inspect it without mixing synthetic runs into the main research directory. To enable unauthenticated trusted-LAN access, pass `--bind 0.0.0.0:8080` to the start script. External strategies now require the local Linux Bubblewrap/systemd sandbox. Run `target/release/tc sandbox-check` to verify prerequisites; see [isolation setup and limits](docs/operations.md#strategy-isolation).
 
 The interface follows your system theme. Use the header toggle for a remembered light/dark preference, or **System** to follow the OS again. Stop the service with **Ctrl+C**, or type **q** or **exit** and press Enter in its terminal.
 
@@ -24,6 +24,8 @@ For a clean real-data research workflow, skip demo and follow the [operations gu
 ```bash
 ./scripts/check
 cargo deny check
+# After the release binary and web assets are built:
+./scripts/check-sandbox
 ```
 
 Checks cover formatting, native and WASM Clippy with warnings denied, domain/protocol/persistence tests, documentation tests, and the release browser build. Dependency checks run separately in CI. The one narrow advisory exception is Leptos's transitive, unmaintained `paste` procedural macro; its reason is recorded in `deny.toml`.

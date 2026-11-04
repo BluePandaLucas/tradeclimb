@@ -2741,7 +2741,17 @@ dependencies = [
  "serde",
  "serde_json",
  "tc-core",
+ "tc-sandbox",
  "tc-sdk",
+]
+
+[[package]]
+name = "tc-sandbox"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]
@@ -2775,6 +2785,7 @@ dependencies = [
  "tc-core",
  "tc-data",
  "tc-engine",
+ "tc-sandbox",
  "tc-sdk",
  "tempfile",
  "tokio",
