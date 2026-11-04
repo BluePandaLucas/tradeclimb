@@ -203,3 +203,38 @@ The Paper trading page lists each version's latest completed development evaluat
 API owners send `{"strategy":"ID","job":"DEVELOPMENT_JOB_ID","approve":true}` to `/api/paper`. Approval, session creation and its audit entry are committed together; repeated starts retain the existing active portfolio. The `paper_approvals` overview entries retain the basis, Sharpe/drawdown/CAGR, growth-target status, approved job/version and owner time. Old unapproved sessions stop on service startup; historical journals remain. Existing simulation risk halts still apply and are not a guaranteed loss ceiling.
 
 `python3 scripts/security-smoke.py --agent-account tc-agent` verifies real owner login, scoped agent requests/revocation, an actual separate UID, host file denial, and network isolation with the development Unix socket. Browser and live-paper smoke fixtures explicitly mock native provenance/eligibility to exercise approval; their data is not market evidence.
+
+## Chronological evaluation and sealed final test
+
+Owner CLI `tc walk-forward --campaign CAMPAIGN --candidates VERSION_A VERSION_B --folds 3` runs expanding training selection entirely inside development. The first half trains; the remainder is split into adjacent forward folds. Each fold selects the highest eligible training Sharpe from the frozen candidate list, breaking ties by version ID, then evaluates that version on the next interval with fresh capital and strategy state. No qualifying training candidate means a skipped test, not a substituted winner. Run configuration uses the documented frozen defaults; no validation feedback is spent. Results and scope/model-cache identities are durable; retrieve an earlier report with `tc walk-forward-report RUN_ID`. This is exploratory robustness analysis because authors may already know the development dates; it does not establish out-of-sample predictive ability. Do not average fold Sharpe values.
+
+`tc diagnostics` reports all retained development job attempts, distinct evaluated versions, walk-forward attempts, the validation ledger and final-test state. Counts include failures/repeats, do not observe external research, and are not independent-trial estimates or adjusted significance.
+
+The final test remains sealed until the owner deliberately executes a prepared plan:
+
+```bash
+# Metadata only: freeze the latest qualifying native development candidate.
+target/release/tc final-test prepare DEVELOPMENT_JOB_ID
+# Explicit, irreversible consumption: run only when strategy selection is finished.
+target/release/tc final-test execute PLAN_ID --consume-final-test
+target/release/tc final-test status
+target/release/tc final-test report --output final-report.json
+```
+
+Preparation freezes the immutable version/executable, campaign/dataset, August–October window, costs/risk settings, evaluation binary hash and inference-configuration hash. It reads no reserved candles and consumes no feedback. Model configuration hashes do not pin mutable external model weights or establish training cutoffs. Execution verifies frozen identities, records consumption atomically before loading data, and permits one run globally per retained database, including failures and interrupted runs. There is no reset/retry endpoint. An interrupted `running` record is consumed; inspect owner diagnostics rather than rerunning. Backups retain consumption and final reports; rolling back an older backup cannot restore scientific untouchedness. The owner can export the final report; agents, normal jobs, overviews and leaderboards never receive it. There is no HTTP execution route.
+
+No real final evaluation has been executed as part of implementing or testing these controls. Test fixtures use generated prices and metadata-only failure plans, never actual final-test observations.
+
+## Free Kraken comparison data
+
+`python3 scripts/kraken-download.py var/kraken-research-csv` fetches only the five EUR one-minute entries from Kraken's official split archive using byte ranges. It checks stable archive ETags, exact ranges and ZIP CRC, saves CSV hashes and source metadata, and retains dates before August 2026 only. It does not download or verify the full multi-gigabyte archive checksum. Failed downloads leave a partial directory for inspection; use a new destination when retrying. `--quarter 2026Q1` or `2026Q2` can fetch a smaller research subset with matching `--start`/`--end`.
+
+Import using `target/release/tc import-kraken var/kraken-research-csv`. The manifest includes the distinct Kraken venue, provenance hashes, coverage and warnings. Accepted snapshots spanning the complete research interval use the same November 2022/November 2025/August 2026 split as the native campaign, without claiming final-test coverage. The downloaded subset begins in November 2022 and has no preceding warmup day. One-minute alignment, seven numeric columns, positive traded volume, monotonic timestamps and all five files are required. No zero filling or Bitvavo price replacement occurs. Default execution assumptions remain Bitvavo assumptions; comparative price robustness is not calibrated Kraken execution performance. Kraken data cannot qualify a native Bitvavo paper/final-test promotion. Campaign/comparison menus display the venue; the initial selection prefers the primary Bitvavo Sharpe campaign while preserving later manual choices.
+
+The imported 2022-11-01–2026-08-01 snapshot contains 7,919,484 candles. It fails strict coverage with 411–419-minute gaps on 14 April 2024 and was explicitly accepted by the owner for research-only comparison on 4 November 2026. The strict failed snapshot and a new approved immutable snapshot are both retained. A campaign with matched research dates was created; no Kraken evaluations have run. See [the metadata-only audit](v2-kraken-audit.json). The separate Kraken approval does not alter Bitvavo data or waive valuation/risk eligibility.
+
+## Forward execution evidence
+
+`python3 scripts/record-books.py var/books-SESSION --seconds 3600 --interval 5` records bounded, read-only Bitvavo depth snapshots for all five markets. Each JSONL event retains original response JSON/hash, server nanosecond timestamp/nonce, local send/receive times, monotonic request duration and explicit errors/rate-limit pauses. The closed recording has a checksum manifest and defaults to a 1-GiB/one-day maximum. A fresh destination prevents accidental overwrite. Ctrl+C seals the captured recording; a hard crash leaves a partial JSONL file without a completed manifest.
+
+These are independent REST snapshots; gaps between polls cannot reconstruct a continuous book or queue position. The recorder makes no fills or cost estimates. Use representative sessions before calibrating participation, partial fills, latency and residual impact. The existing short `cost-audit.py` remains a displayed-depth sanity check. Current engine fee rounding and market precision, candle full-fill assumptions, paper top-level liquidity, limit-order/queue simulation and historical universes remain explicit follow-up work; those financial semantics have not been changed by adding data collection.

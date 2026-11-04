@@ -21,6 +21,7 @@ use std::{
     time::Duration,
 };
 use tc_core::*;
+pub mod kraken;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Coverage {
@@ -39,6 +40,8 @@ pub struct Partition {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Manifest {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<Source>,
     pub id: String,
     pub venue: String,
     pub start: i64,
@@ -49,6 +52,16 @@ pub struct Manifest {
     pub synthetic: bool,
     pub accepted: bool,
     pub notes: Vec<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Source {
+    pub file: String,
+    pub sha256: String,
+}
+struct Origin {
+    venue: String,
+    synthetic: bool,
+    sources: Vec<Source>,
 }
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -143,12 +156,39 @@ fn read_parquet(path: &Path) -> Result<Vec<Candle>> {
 }
 pub fn snapshot(
     root: &Path,
-    mut rows: Vec<Candle>,
+    rows: Vec<Candle>,
     start: i64,
     end: i64,
     synthetic: bool,
     accept_gaps: bool,
 ) -> Result<Manifest> {
+    snapshot_from(
+        root,
+        rows,
+        start,
+        end,
+        accept_gaps,
+        Origin {
+            venue: if synthetic {
+                "synthetic-fixture"
+            } else {
+                "bitvavo"
+            }
+            .into(),
+            synthetic,
+            sources: vec![],
+        },
+    )
+}
+fn snapshot_from(
+    root: &Path,
+    mut rows: Vec<Candle>,
+    start: i64,
+    end: i64,
+    accept_gaps: bool,
+    origin: Origin,
+) -> Result<Manifest> {
+    let synthetic = origin.synthetic;
     ensure!(
         end > start && start % MINUTE == 0 && end % MINUTE == 0,
         "invalid dataset range"
@@ -190,6 +230,13 @@ pub fn snapshot(
     hash.update(start.to_le_bytes());
     hash.update(end.to_le_bytes());
     hash.update([u8::from(synthetic), u8::from(accept_gaps)]);
+    // Preserve existing Bitvavo/fixture identities while separating other venues
+    // and their provenance even when candle values happen to match.
+    if origin.venue != "bitvavo" && origin.venue != "synthetic-fixture"
+        || !origin.sources.is_empty()
+    {
+        hash.update(serde_json::to_vec(&(&origin.venue, &origin.sources))?);
+    }
     for c in &rows {
         hash.update(serde_json::to_vec(c)?);
     }
@@ -234,14 +281,13 @@ pub fn snapshot(
     if accept_gaps {
         notes.push("Owner explicitly accepted large unknown data gaps".into());
     }
+    if origin.venue == "kraken" {
+        notes.push("Separate Kraken comparison data; never a Bitvavo gap repair. Default execution costs/rules remain Bitvavo research assumptions, not calibrated Kraken fills.".into());
+    }
     let manifest = Manifest {
+        sources: origin.sources,
         id,
-        venue: if synthetic {
-            "synthetic-fixture"
-        } else {
-            "bitvavo"
-        }
-        .into(),
+        venue: origin.venue,
         start,
         end,
         created_at: now(),

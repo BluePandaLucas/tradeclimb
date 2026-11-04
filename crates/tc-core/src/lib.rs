@@ -355,6 +355,20 @@ pub fn sample(points: &[EquityPoint], limit: usize) -> Vec<EquityPoint> {
 mod tests {
     use super::*;
     #[test]
+    fn persisted_financial_scores_retain_their_exact_float_values() {
+        // Regression values from a generated chronological evaluation fixture.
+        for score in [
+            11.429298040082259_f64,
+            0.21713038747733338,
+            13.885058049104599,
+            0.09487235395479421,
+        ] {
+            let value = serde_json::to_string(&score).unwrap();
+            let restored: f64 = serde_json::from_str(&value).unwrap();
+            assert_eq!(score.to_bits(), restored.to_bits());
+        }
+    }
+    #[test]
     fn samples_keep_extreme_and_obey_cap() {
         let points: Vec<_> = (0..10_000)
             .map(|i| EquityPoint {

@@ -25,6 +25,8 @@ jobs:
           cargo install wasm-bindgen-cli --version 0.2.130 --locked
           ./scripts/build-web
           python3 scripts/smoke.py
+          python3 scripts/evaluation-smoke.py
+          python3 scripts/kraken-smoke.py
           ./scripts/check-sandbox
           agent_test_data=$(mktemp -d)
           ./scripts/setup-agent "$agent_test_data"

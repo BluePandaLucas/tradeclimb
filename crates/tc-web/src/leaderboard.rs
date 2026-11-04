@@ -26,7 +26,7 @@ pub fn Leaderboard(
                 <label>"Comparison"<select prop:value=group_id disabled=groups.is_empty() on:change=move|ev|selected.set(event_target_value(&ev))>
                 {groups.iter().map(|g| {
                     let campaign = campaigns.iter().find(|c| c["id"] == g["campaign"]);
-                    let dataset = campaign.map(|c| short(&text(c,"dataset"))).unwrap_or_default();
+                    let dataset = campaign.map(|c| dataset_name(&data,&text(c,"dataset"))).unwrap_or_default();
                     view!{<option value=text(g,"id")>{format!("{} · {} · {} · {} · {} → {} · fee {} / slip {} bps",short(&text(g,"campaign")),dataset,text(g,"period"),score_label(g),date(&g["config"]["start"]),date(&g["config"]["end"]),g["config"]["fee_bps"],g["config"]["slippage_bps"])}</option>}
                 }).collect_view()}
                 </select></label>

@@ -2,6 +2,7 @@
 pub mod auth;
 mod broker;
 mod build;
+mod evaluation;
 mod http;
 mod inference;
 mod leaderboard;
@@ -9,6 +10,7 @@ mod paper;
 mod promotion;
 use anyhow::{Context, Result, ensure};
 pub use build::{build_strategy, sandbox_check};
+pub use evaluation::{FinalPlan, WalkForward};
 pub use http::serve;
 pub use inference::infer;
 pub use paper::{PaperSession, run_paper};
@@ -169,6 +171,7 @@ impl Store {
         let db = store.db()?;
         db.execute_batch("CREATE TABLE IF NOT EXISTS objects(kind TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,key TEXT UNIQUE NOT NULL,fingerprint TEXT NOT NULL,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS validation(fingerprint TEXT PRIMARY KEY,job TEXT NOT NULL); CREATE TABLE IF NOT EXISTS ledger(id INTEGER PRIMARY KEY CHECK(id=1),used INTEGER NOT NULL,maximum INTEGER NOT NULL,revealed INTEGER NOT NULL); INSERT OR IGNORE INTO ledger VALUES(1,0,10,0); CREATE TABLE IF NOT EXISTS paper_events(session TEXT NOT NULL,sequence INTEGER NOT NULL,frame TEXT NOT NULL,fills TEXT NOT NULL,PRIMARY KEY(session,sequence)); CREATE TABLE IF NOT EXISTS model_cache(scope TEXT NOT NULL,key TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(scope,key));")?;
         auth::initialize(&store)?;
+        evaluation::initialize(&store)?;
         Ok(store)
     }
     pub fn db(&self) -> Result<Connection> {
@@ -300,15 +303,14 @@ impl Store {
             manifest.accepted,
             "dataset failed coverage gate; inspect and explicitly accept gaps during import if appropriate"
         );
-        let full =
-            manifest.start <= timestamp("2022-11-01")? && manifest.end >= timestamp("2026-11-01")?;
+        let full = manifest.start <= timestamp("2022-11-01")? && manifest.end >= FINAL_TEST_START;
         let start = if full {
             timestamp("2022-11-01")?
         } else {
             manifest.start
         };
         let end = if full {
-            timestamp("2026-11-01")?
+            manifest.end.min(FINAL_TEST_END)
         } else {
             manifest.end
         };
@@ -384,6 +386,9 @@ impl Store {
         Ok(())
     }
     pub fn submit(&self, request: Submission) -> Result<Job> {
+        self.submit_scoped(request, None)
+    }
+    pub(crate) fn submit_scoped(&self, request: Submission, agent: Option<&str>) -> Result<Job> {
         ensure!(
             !request.idempotency_key.is_empty() && request.idempotency_key.len() <= 200,
             "idempotency key required"
@@ -419,6 +424,14 @@ impl Store {
         };
         let mut db = self.db()?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(id) = agent {
+            ensure!(
+                request.period == Period::Development,
+                "agents may submit development only"
+            );
+            let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM agent_credentials WHERE id=?1 AND revoked=0 AND expires>?2)",params![id,now()],|r|r.get(0))?;
+            ensure!(active, "agent credential expired or revoked");
+        }
         let existing: Option<(String, String)> = tx
             .query_row(
                 "SELECT fingerprint,data FROM jobs WHERE key=?1",
@@ -489,6 +502,12 @@ impl Store {
                 serde_json::to_string(&job)?
             ],
         )?;
+        if let Some(agent) = agent {
+            tx.execute(
+                "INSERT INTO objects VALUES('job_agent',?1,?2)",
+                params![id, serde_json::to_string(&json!({"id":agent}))?],
+            )?;
+        }
         if request.period == Period::Validation {
             tx.execute(
                 "INSERT INTO validation VALUES(?1,?2)",
@@ -558,7 +577,13 @@ impl Store {
             "DELETE FROM objects WHERE kind IN ('service_owner','worker_lease','paper_lease')",
             [],
         )?;
-        for name in ["datasets", "strategies", "jobs"] {
+        for name in [
+            "datasets",
+            "strategies",
+            "jobs",
+            "evaluations",
+            "final-test",
+        ] {
             copy_tree(&self.root.join(name), &destination.join(name))?;
         }
         Ok(())
@@ -1068,6 +1093,15 @@ mod tests {
             assert_eq!(holdout.end, FINAL_TEST_END);
             assert!(holdout.range_covered);
         }
+        // A comparison dataset intentionally stopping before the holdout must
+        // use the same research split, without claiming final-test coverage.
+        let manifest =
+            tc_data::snapshot(&store.root, vec![], start, FINAL_TEST_START, true, true).unwrap();
+        let c = store.campaign(&manifest.id).unwrap();
+        assert_eq!(c.development_start, timestamp("2022-11-01").unwrap());
+        assert_eq!(c.development_end, timestamp("2025-11-01").unwrap());
+        assert_eq!(c.validation_end, FINAL_TEST_START);
+        assert!(c.final_test.is_none());
     }
     #[test]
     fn legacy_or_forged_campaign_cannot_evaluate_reserved_dates_or_spend_budget() {

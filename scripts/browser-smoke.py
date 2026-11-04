@@ -63,6 +63,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.get_by_role('button',name='Backtests',exact=True).click()
    assert page.locator('.stats').count()==0
    assert page.locator('.controls').count()==1
+   assert 'Fixture' in page.get_by_label('Evaluation campaign').inner_text()
    selects=page.locator('.controls select')
    initial=selects.nth(0).input_value()
    subprocess.run([str(root/'target/release/tc'),'--data-dir',folder,'builtin','--name','New fixture version'],check=True,capture_output=True)

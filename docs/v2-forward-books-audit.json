@@ -1,0 +1,21 @@
+{
+  "version": "book_snapshots_v1",
+  "venue": "bitvavo",
+  "started_utc_ns": 1793813171553955422,
+  "finished_utc_ns": 1793813191565442806,
+  "requested_seconds": 20,
+  "interval_seconds": 5.0,
+  "events": 20,
+  "errors": 0,
+  "bytes": 1020044,
+  "stop_reason": "duration",
+  "sha256": "2ef6f86bfdf59856df935e79dde2ac3d52c4bd9dd5273f486a8d4a700d1e05f7",
+  "file": "events.jsonl",
+  "source": "https://docs.bitvavo.com/docs/rest-api/get-order-book/",
+  "limits": [
+    "Independent REST snapshots, not a complete event stream or queue reconstruction",
+    "Server timestamp is nanoseconds; local clock skew and request duration are retained, not corrected",
+    "Unobserved intervals, failures and cancelled liquidity must remain unknown",
+    "No exchange orders, inferred fills or execution-cost calibration are produced by recording"
+  ]
+}

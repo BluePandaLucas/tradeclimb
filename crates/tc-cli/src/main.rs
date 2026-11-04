@@ -35,6 +35,16 @@ enum Action {
         accept_gaps: bool,
     },
     Demo,
+    /// Import a separately labeled Kraken comparison from five one-minute CSVs.
+    ImportKraken {
+        directory: PathBuf,
+        #[arg(long, default_value = "2022-11-01")]
+        start: String,
+        #[arg(long, default_value = "2026-08-01")]
+        end: String,
+        #[arg(long)]
+        accept_gaps: bool,
+    },
     Auth {
         #[command(subcommand)]
         action: AuthAction,
@@ -106,6 +116,24 @@ enum Action {
         #[arg(long)]
         extend: Option<u32>,
     },
+    /// Expanding training selection and forward folds, wholly inside development.
+    WalkForward {
+        #[arg(long)]
+        campaign: String,
+        #[arg(long, required = true, num_args = 1..)]
+        candidates: Vec<String>,
+        #[arg(long, default_value_t = 3)]
+        folds: usize,
+    },
+    WalkForwardReport {
+        id: String,
+    },
+    Diagnostics,
+    /// Owner-only final-test freeze, explicit one-time consumption and report export.
+    FinalTest {
+        #[command(subcommand)]
+        action: FinalAction,
+    },
     Backup {
         destination: PathBuf,
     },
@@ -131,6 +159,22 @@ enum AuthAction {
     },
     RotateOwner,
 }
+#[derive(Subcommand)]
+enum FinalAction {
+    Prepare {
+        development_job: String,
+    },
+    Execute {
+        plan: String,
+        #[arg(long)]
+        consume_final_test: bool,
+    },
+    Status,
+    Report {
+        #[arg(long)]
+        output: PathBuf,
+    },
+}
 fn print(value: &impl serde::Serialize) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
@@ -145,6 +189,41 @@ fn main() -> Result<()> {
         .init();
     let store = Store::open(&args.data_dir)?;
     match args.command {
+        Action::WalkForwardReport { id } => {
+            print(&store.get::<tc_service::WalkForward>("walk_forward", &id)?)
+        }
+        Action::ImportKraken {
+            directory,
+            start,
+            end,
+            accept_gaps,
+        } => print(&tc_data::kraken::import(
+            &store.root,
+            &directory,
+            timestamp(&start)?,
+            timestamp(&end)?,
+            accept_gaps,
+        )?),
+        Action::WalkForward {
+            campaign,
+            candidates,
+            folds,
+        } => print(&store.walk_forward(&campaign, candidates, folds)?),
+        Action::Diagnostics => print(&store.research_diagnostics()?),
+        Action::FinalTest { action } => match action {
+            FinalAction::Prepare { development_job } => {
+                print(&store.prepare_final(&development_job)?)
+            }
+            FinalAction::Execute {
+                plan,
+                consume_final_test,
+            } => print(&store.execute_final(&plan, consume_final_test)?),
+            FinalAction::Status => print(&store.final_status()?),
+            FinalAction::Report { output } => {
+                tc_data::save_json(&output, &store.final_report()?)?;
+                Ok(())
+            }
+        },
         Action::Auth { action } => match action {
             AuthAction::Status => print(&tc_service::auth::status(&store)?),
             AuthAction::IssueAgent { name, output, days } => print(&tc_service::auth::issue_agent(

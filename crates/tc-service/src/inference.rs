@@ -14,7 +14,11 @@ pub async fn infer(store: &Store, input: InferenceRequest) -> Result<ModelRespon
         "inference request exceeds limits"
     );
     ensure!(
-        store.job(&input.scope).is_ok() || store.get::<PaperSession>("paper", &input.scope).is_ok(),
+        store.job(&input.scope).is_ok()
+            || store.get::<PaperSession>("paper", &input.scope).is_ok()
+            || store
+                .get::<Value>("evaluation_scope", &input.scope)
+                .is_ok_and(|v| v["state"] == "running"),
         "unknown inference scope"
     );
     let key = digest(&serde_json::to_vec(&input.request)?);
@@ -85,6 +89,33 @@ pub async fn infer(store: &Store, input: InferenceRequest) -> Result<ModelRespon
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn chronological_evaluation_model_scope_ends_with_its_run() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::open(root.path()).unwrap();
+        let scope = "wf:fixture:0:test";
+        let request = || InferenceRequest {
+            scope: scope.into(),
+            request: tc_sdk::ModelRequest {
+                capability: "fake".into(),
+                prompt: "generated control fixture".into(),
+                max_tokens: 10,
+            },
+        };
+        assert!(infer(&store, request()).await.is_err());
+        store
+            .put("evaluation_scope", scope, &json!({"state":"running"}))
+            .unwrap();
+        assert_eq!(
+            infer(&store, request()).await.unwrap().text,
+            "generated control fixture"
+        );
+        store
+            .put("evaluation_scope", scope, &json!({"state":"completed"}))
+            .unwrap();
+        assert!(infer(&store, request()).await.is_err());
+        assert_eq!(store.ledger().unwrap()["used"], 0);
+    }
     #[tokio::test]
     async fn responses_replay_within_scope_and_never_cross_sessions() {
         let root = tempfile::tempdir().unwrap();

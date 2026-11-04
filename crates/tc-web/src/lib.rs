@@ -17,6 +17,21 @@ fn text(v: &Value, key: &str) -> String {
 fn items(v: &Value, key: &str) -> Vec<Value> {
     v[key].as_array().cloned().unwrap_or_default()
 }
+fn dataset_name(data: &Value, id: &str) -> String {
+    let datasets = items(data, "datasets");
+    let venue = datasets
+        .iter()
+        .find(|d| text(d, "id") == id)
+        .map(|d| text(d, "venue"))
+        .unwrap_or_default();
+    let name = match venue.as_str() {
+        "bitvavo" => "Bitvavo",
+        "kraken" => "Kraken",
+        "synthetic-fixture" => "Fixture",
+        _ => "Dataset",
+    };
+    format!("{name} {}", short(id))
+}
 fn percent(v: &Value) -> String {
     v.as_f64()
         .map_or("—".into(), |n| format!("{:+.2}%", n * 100.0))
@@ -124,10 +139,22 @@ fn App() -> impl IntoView {
             selected_strategy.set(text(first, "id"));
         }
         let campaigns = items(&data, "campaigns");
+        let datasets = items(&data, "datasets");
+        let native = |c: &&Value| {
+            datasets
+                .iter()
+                .any(|d| d["id"] == c["dataset"] && d["venue"] == "bitvavo")
+        };
+        let preferred = campaigns
+            .iter()
+            .filter(native)
+            .find(|c| is_sharpe(c))
+            .or_else(|| campaigns.iter().find(native))
+            .or(campaigns.first());
         if !campaigns
             .iter()
             .any(|c| text(c, "id") == selected_campaign.get())
-            && let Some(first) = campaigns.first()
+            && let Some(first) = preferred
         {
             selected_campaign.set(text(first, "id"));
         }
@@ -248,7 +275,7 @@ fn App() -> impl IntoView {
     <main><header class="topbar"><div class="breadcrumb">"Workspace"<span>"/"</span>{move||tab.get()}</div><div class="connection"><span class:offline=move||!online.get() class="live-dot"></span><span class="connection-text">{move||if online.get(){"Connected"}else{"Reconnecting"}}</span><ThemeToggle/><button class="text-button" on:click=move|_|{spawn_local(async move {let _=Request::post("/api/logout").send().await;sign_in();});}>"Sign out"</button><span class="pill">"NO REAL ORDERS"</span></div></header>
     <div class="content"><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>"Explore ideas. Measure honestly. Keep climbing."</p></div><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());campaign.map(|c|if is_sharpe(c) {"OBJECTIVE · SHARPE".into()} else {format!("GOAL {} NET CAGR",percent(&c["target_cagr"]))}).unwrap_or("OBJECTIVE · SHARPE".into())}}</span>{move||date(&snapshot.get()["time"])}</div></div>
     <Show when=move||tab.get()=="Backtests"><div class="controls"><label>"Strategy"<select prop:value=move||selected_strategy.get() on:change=move|ev|selected_strategy.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"strategies").into_iter().filter(|s|s["archived"]!=true).collect::<Vec<_>>()} key={|s:&Value|text(s,"id")} children={move |s| view!{<option value=text(&s,"id")>{text(&s["spec"],"name")}</option>}}/></select></label>
-    <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · {}",short(&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),score_label(&c))}</option>}}/></select></label>
+    <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · {}",dataset_name(&snapshot.get(),&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),score_label(&c))}</option>}}/></select></label>
     <label>"Period"<select prop:value=move||period.get() on:change=move|ev|period.set(event_target_value(&ev))><option value="development">"Development"</option><option value="validation">"Validation · score only"</option></select></label>
     <button class="primary" on:click=move|_|{let s=snapshot.get();let strategy=if selected_strategy.get().is_empty(){text(&items(&s,"strategies").into_iter().find(|s|s["archived"]!=true).unwrap_or(Value::Null),"id")}else{selected_strategy.get()};let campaign=if selected_campaign.get().is_empty(){text(&items(&s,"campaigns").into_iter().next().unwrap_or(Value::Null),"id")}else{selected_campaign.get()};action("/api/jobs".into(),json!({"strategy":strategy,"campaign":campaign,"period":period.get(),"idempotency_key":format!("web-{}",js_sys::Date::now())}),status);}>"＋ Run backtest"</button>
     </div></Show>

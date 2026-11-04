@@ -1,0 +1,2520 @@
+{
+  "purpose": "Separate free Kraken comparison, explicitly accepted with visible gap warnings. No evaluations or final-test access.",
+  "final_test": "Raw subset retains only timestamps before 2026-08-01; no final-test strategy execution or price inspection.",
+  "archive": {
+    "source": "https://support.kraken.com/articles/360047124832-downloadable-historical-ohlcvt-open-high-low-close-volume-trades-data",
+    "downloaded_at": "2026-11-04T17:20:47.443168+00:00",
+    "start": 1667260800000,
+    "end": 1785542400000,
+    "archive_parts": [
+      {
+        "url": "https://assets.kraken.com/marketing/institutions/Kraken_OHLCVT_Full.zip.part00",
+        "start": 0,
+        "size": 2097152000,
+        "etag": "\"ca80893857c56a8cd44df4ee3caa398d-250\""
+      },
+      {
+        "url": "https://assets.kraken.com/marketing/institutions/Kraken_OHLCVT_Full.zip.part01",
+        "start": 2097152000,
+        "size": 2097152000,
+        "etag": "\"84d0ef1069baaf64411a32a43879d059-250\""
+      },
+      {
+        "url": "https://assets.kraken.com/marketing/institutions/Kraken_OHLCVT_Full.zip.part02",
+        "start": 4194304000,
+        "size": 2097152000,
+        "etag": "\"1be9935a090cacbfe3a4c815fa3ab77c-250\""
+      },
+      {
+        "url": "https://assets.kraken.com/marketing/institutions/Kraken_OHLCVT_Full.zip.part03",
+        "start": 6291456000,
+        "size": 2097152000,
+        "etag": "\"fee21d7ffc8850bda007640a0ea994c8-250\""
+      },
+      {
+        "url": "https://assets.kraken.com/marketing/institutions/Kraken_OHLCVT_Full.zip.part04",
+        "start": 8388608000,
+        "size": 1157945626,
+        "etag": "\"8891beec53b287dc88d555c5ef9103f2-139\""
+      }
+    ],
+    "http_bytes_downloaded": 329570586,
+    "files": [
+      {
+        "market": "BTC-EUR",
+        "file": "BTC-EUR_1.csv",
+        "sha256": "0b2b1fea40a7d6139ff21ce5488158b38b80012f3540f8246efcd3e78a53f45d",
+        "rows": 1951377,
+        "archive_entry": "XBTEUR_1.csv",
+        "archive_crc32": "27971c41",
+        "archive_entry_sha256": "0774a1b9504dc9461c64628b39223cc1337d2ea938792118b7ed5adc6479b2e8"
+      },
+      {
+        "market": "ETH-EUR",
+        "file": "ETH-EUR_1.csv",
+        "sha256": "a66013cab926bda6fdb7675b37a1d174a2fb132b5560c110ac1bdfa97780d928",
+        "rows": 1854247,
+        "archive_entry": "ETHEUR_1.csv",
+        "archive_crc32": "cd1c1ae2",
+        "archive_entry_sha256": "17427316f60ec1016c1563d57acd935b8f6dfec8ca9e08f21dedae96a0c5d56c"
+      },
+      {
+        "market": "SOL-EUR",
+        "file": "SOL-EUR_1.csv",
+        "sha256": "9e3b8ba0472ab9b4c88f885a3a8a510c99d925e550b456d9d5657b8d25ab810b",
+        "rows": 1549242,
+        "archive_entry": "SOLEUR_1.csv",
+        "archive_crc32": "b63b6389",
+        "archive_entry_sha256": "0957f0b2b2e3d63bac8fcc0676fc7e462dfb51b89d3998c5f6c5a40773a26301"
+      },
+      {
+        "market": "XRP-EUR",
+        "file": "XRP-EUR_1.csv",
+        "sha256": "b35dd36464a27dc3c4e7fb6bcb7a58bf8888008cd17e87bdaf93323169807c8b",
+        "rows": 1548699,
+        "archive_entry": "XRPEUR_1.csv",
+        "archive_crc32": "d6530191",
+        "archive_entry_sha256": "b1d06dcfcf1b443cd2c4db0b3940f3b570b077dcfeeea24a8b102c5ef91fe39e"
+      },
+      {
+        "market": "ADA-EUR",
+        "file": "ADA-EUR_1.csv",
+        "sha256": "23d32333c65abcf5df5ff0536207598a50f2ce49e2d626e293ce511b516698e4",
+        "rows": 1015919,
+        "archive_entry": "ADAEUR_1.csv",
+        "archive_crc32": "45c5a1c0",
+        "archive_entry_sha256": "67866bd7604692056310ab5e73b0737611c844992bff4ae316184112d365d502"
+      }
+    ],
+    "verification": "Stable ETags, exact byte ranges, ZIP CRC and local CSV SHA-256. Full archive SHA-256 is not verified when fetching a subset. No zero filling or venue mixing."
+  },
+  "strict_manifest": {
+    "sources": [
+      {
+        "file": "BTC-EUR_1.csv",
+        "sha256": "0b2b1fea40a7d6139ff21ce5488158b38b80012f3540f8246efcd3e78a53f45d"
+      },
+      {
+        "file": "ETH-EUR_1.csv",
+        "sha256": "a66013cab926bda6fdb7675b37a1d174a2fb132b5560c110ac1bdfa97780d928"
+      },
+      {
+        "file": "SOL-EUR_1.csv",
+        "sha256": "9e3b8ba0472ab9b4c88f885a3a8a510c99d925e550b456d9d5657b8d25ab810b"
+      },
+      {
+        "file": "XRP-EUR_1.csv",
+        "sha256": "b35dd36464a27dc3c4e7fb6bcb7a58bf8888008cd17e87bdaf93323169807c8b"
+      },
+      {
+        "file": "ADA-EUR_1.csv",
+        "sha256": "23d32333c65abcf5df5ff0536207598a50f2ce49e2d626e293ce511b516698e4"
+      },
+      {
+        "file": "origin.json",
+        "sha256": "7711c5fe50c4b37810c8ba0584431da26029880e31061dc7810115ef5eff534e"
+      }
+    ],
+    "id": "3199771abcf4dfaf654c2f3af5f3e4b26d7b36de42c5780ca6088a10bc3f5824",
+    "venue": "kraken",
+    "start": 1667260800000,
+    "end": 1785542400000,
+    "created_at": 1793813074267,
+    "coverage": [
+      {
+        "market": "BTC-EUR",
+        "rows": 1951377,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 19983,
+        "largest_gap_minutes": 411
+      },
+      {
+        "market": "ETH-EUR",
+        "rows": 1854247,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 117113,
+        "largest_gap_minutes": 411
+      },
+      {
+        "market": "SOL-EUR",
+        "rows": 1549242,
+        "first": 1667261100000,
+        "last": 1785542340000,
+        "missing_minutes": 422118,
+        "largest_gap_minutes": 413
+      },
+      {
+        "market": "XRP-EUR",
+        "rows": 1548699,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 422661,
+        "largest_gap_minutes": 419
+      },
+      {
+        "market": "ADA-EUR",
+        "rows": 1015919,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 955441,
+        "largest_gap_minutes": 412
+      }
+    ],
+    "partitions": [
+      {
+        "path": "ADA-EUR-2022-11.parquet",
+        "sha256": "d65605bd8b2ca8b134e25385c11d84fed9561788ed35c64ec9ef17437924b1ff",
+        "rows": 23710
+      },
+      {
+        "path": "ADA-EUR-2022-12.parquet",
+        "sha256": "73c33368f6a634afcee28b2b97a7859f6548a2c89c84ace1cdcf85263c09be00",
+        "rows": 19846
+      },
+      {
+        "path": "ADA-EUR-2023-01.parquet",
+        "sha256": "26e51f285d1d88adc699feedb275f40f233ce4bb60e35dfe7a9215ad94d2e03e",
+        "rows": 24689
+      },
+      {
+        "path": "ADA-EUR-2023-02.parquet",
+        "sha256": "190b2a8be3199ca4c552a05470fd3439f68529a81c413301d05ed6a995f89980",
+        "rows": 21214
+      },
+      {
+        "path": "ADA-EUR-2023-03.parquet",
+        "sha256": "5d27c4115d8b51132e0906b2568d5d80a15bee268f4424a8c25e6963ce2b057f",
+        "rows": 24666
+      },
+      {
+        "path": "ADA-EUR-2023-04.parquet",
+        "sha256": "3da763b9592ce7c9662e82f96ff6bd795f9b5d9cd324fa5281e34077ebc49911",
+        "rows": 22332
+      },
+      {
+        "path": "ADA-EUR-2023-05.parquet",
+        "sha256": "012d952ac5eaa4918975551ae30f65e313ea8c291ffedfbafe848def22d972d4",
+        "rows": 18720
+      },
+      {
+        "path": "ADA-EUR-2023-06.parquet",
+        "sha256": "8573c27911e1d275c26c519f09036905f77ae3e93217acc37adfe3b1c6fee161",
+        "rows": 22859
+      },
+      {
+        "path": "ADA-EUR-2023-07.parquet",
+        "sha256": "97351461086239063523eabc82469db7e085db68a6d1f92ce0a422604a3cff94",
+        "rows": 19900
+      },
+      {
+        "path": "ADA-EUR-2023-08.parquet",
+        "sha256": "aa4dbc8edd2950f160291ba8eecd3340cf8795861ba18016a76b149477da3d74",
+        "rows": 20498
+      },
+      {
+        "path": "ADA-EUR-2023-09.parquet",
+        "sha256": "a8587618c5adeee25ac93c1f7a4c64546f5e5e3bf2d10cc14c866e099ca4c4c0",
+        "rows": 17133
+      },
+      {
+        "path": "ADA-EUR-2023-10.parquet",
+        "sha256": "b473da0511fa608ac6615534b704f5b53d9fa7526c80f600338b148f68c2072e",
+        "rows": 19801
+      },
+      {
+        "path": "ADA-EUR-2023-11.parquet",
+        "sha256": "cad37347ce522ade6dcb6012a81d66ef3b61f8493ff31b83504589194ddff60f",
+        "rows": 27054
+      },
+      {
+        "path": "ADA-EUR-2023-12.parquet",
+        "sha256": "34e2028ac3d67a232151c96483c8375bf933348063e1f63a05fd401451276646",
+        "rows": 31834
+      },
+      {
+        "path": "ADA-EUR-2024-01.parquet",
+        "sha256": "39df8822ab4eec34356f81b72eb3fede9522f0d07e5b379e8321bbd3d2df9944",
+        "rows": 25930
+      },
+      {
+        "path": "ADA-EUR-2024-02.parquet",
+        "sha256": "e4418d7d4912533df81c687c134930f26ccd3025280bed74df71e247083fae4f",
+        "rows": 25008
+      },
+      {
+        "path": "ADA-EUR-2024-03.parquet",
+        "sha256": "ef529893bc3538081c01f1bfb0ec642f1bfd2b6651b5eaba0a5841642ca48424",
+        "rows": 31959
+      },
+      {
+        "path": "ADA-EUR-2024-04.parquet",
+        "sha256": "b9cb5af42f7557d1db8c6008298c712b32b386afd855364d5a7330c403535f2d",
+        "rows": 23930
+      },
+      {
+        "path": "ADA-EUR-2024-05.parquet",
+        "sha256": "a77fb68a56738430bc7d1bb4ebc9429f8b0cbc1cf86d1046fa663428b1b452cf",
+        "rows": 19597
+      },
+      {
+        "path": "ADA-EUR-2024-06.parquet",
+        "sha256": "47a0d5ee1c8886508dac4246243ceac64eb8938b94086abe5cc2a046faf7f5ef",
+        "rows": 17176
+      },
+      {
+        "path": "ADA-EUR-2024-07.parquet",
+        "sha256": "3fae545cf426b79b8d3d97ea061f5d4f88b21206083a46ec836b6d13c1a2630f",
+        "rows": 17222
+      },
+      {
+        "path": "ADA-EUR-2024-08.parquet",
+        "sha256": "aab6a6f4b91aa71fa0e984e09b8e9dc2b30c6abb76884a24d8d0d2ae07c61dbb",
+        "rows": 16052
+      },
+      {
+        "path": "ADA-EUR-2024-09.parquet",
+        "sha256": "1ca08df613f25842ac263eb49608bf3c92a006824e1223aefd4cfa0f96bc5428",
+        "rows": 14388
+      },
+      {
+        "path": "ADA-EUR-2024-10.parquet",
+        "sha256": "eb1d1385088985b8ed4860216a079ef84d6dfd20246bc99f59916ee9c2ac2f28",
+        "rows": 14230
+      },
+      {
+        "path": "ADA-EUR-2024-11.parquet",
+        "sha256": "87b97f88e0bcf2037eb4d45d4c116b3099421748bc6b350d23843265ac47bbfd",
+        "rows": 32915
+      },
+      {
+        "path": "ADA-EUR-2024-12.parquet",
+        "sha256": "186a891e0bb0cc0a66b07c7faf9d6218a3db0c888aec08f9a9e05700fe0f3b97",
+        "rows": 32228
+      },
+      {
+        "path": "ADA-EUR-2025-01.parquet",
+        "sha256": "0a7c0294318a04df5b8c002b953123cda4fd09e4a757aa02768d73409f65a161",
+        "rows": 30657
+      },
+      {
+        "path": "ADA-EUR-2025-02.parquet",
+        "sha256": "6ff9e479559a1b1fde3889d5479091524fc6045ceeec553dde5a16b1815a9495",
+        "rows": 23932
+      },
+      {
+        "path": "ADA-EUR-2025-03.parquet",
+        "sha256": "9b4b32dc6b49bbb48dd7a726df5f092b65909b145a625772d15c8632fd3e06db",
+        "rows": 26126
+      },
+      {
+        "path": "ADA-EUR-2025-04.parquet",
+        "sha256": "1dca4261e22852634c22afa6a77042cd7a1913d8da8b8f972beddb0c9da4b4bd",
+        "rows": 21988
+      },
+      {
+        "path": "ADA-EUR-2025-05.parquet",
+        "sha256": "2ea176da62325aaaa92cfc771c33dce1f861fce6b751b020a4f8f91ed14d5ac3",
+        "rows": 23035
+      },
+      {
+        "path": "ADA-EUR-2025-06.parquet",
+        "sha256": "0904f66e2090adf918cf145bd9ace657c0825a91146b95919d3d01ac0b356337",
+        "rows": 19376
+      },
+      {
+        "path": "ADA-EUR-2025-07.parquet",
+        "sha256": "b1c468210b686139e751d15ff32e0fb4d2c2881e4b864200f67cbe9943de4367",
+        "rows": 25801
+      },
+      {
+        "path": "ADA-EUR-2025-08.parquet",
+        "sha256": "9cd47b95902469dc56fe8ff24e28c50c265a7c93f96ddb0d475616425d951a38",
+        "rows": 25550
+      },
+      {
+        "path": "ADA-EUR-2025-09.parquet",
+        "sha256": "c58c54b42330501737385de72c597ee92de4a0426737151cfa332137e41c4965",
+        "rows": 21280
+      },
+      {
+        "path": "ADA-EUR-2025-10.parquet",
+        "sha256": "0183921b937b47a0628c69fa864feeab253848dc29c174b1db40cd17123b355d",
+        "rows": 25268
+      },
+      {
+        "path": "ADA-EUR-2025-11.parquet",
+        "sha256": "13f4ac078f5f04fb9b32f2acfc4e319eff355bdd30c16cbde4465f27eddf0c74",
+        "rows": 24590
+      },
+      {
+        "path": "ADA-EUR-2025-12.parquet",
+        "sha256": "dd60b1d5a365fb7ceb1528b5ae1b7e1214a98a492a2f4bf2e4dc2d47837912ee",
+        "rows": 23697
+      },
+      {
+        "path": "ADA-EUR-2026-01.parquet",
+        "sha256": "934b4f29d1199878ce50802c4f1ce7eff6c014ed693ce38bf35b924645ba0185",
+        "rows": 22709
+      },
+      {
+        "path": "ADA-EUR-2026-02.parquet",
+        "sha256": "484c80c3ddacc5bebc9e1a0a171c258eebbb7cf7459a8b0ff1cc5c4c85ea74ac",
+        "rows": 22102
+      },
+      {
+        "path": "ADA-EUR-2026-03.parquet",
+        "sha256": "a445f0212a035a857e3b25038d784de13e61c954aa7829b4efd8a31512b41b39",
+        "rows": 17889
+      },
+      {
+        "path": "ADA-EUR-2026-04.parquet",
+        "sha256": "c8db2645ccbfe1bb8b436ebd829b594c956c6dd31c11763b6a85c70bcfb9c0a1",
+        "rows": 17576
+      },
+      {
+        "path": "ADA-EUR-2026-05.parquet",
+        "sha256": "496a693b359b76de9dad3940fbb8f23010d14e15066607c8ec6a8005202eac25",
+        "rows": 15942
+      },
+      {
+        "path": "ADA-EUR-2026-06.parquet",
+        "sha256": "1c99d14558492fd9812e27c8914cabe538f9a1a6cb200b3dcb788004a8b758ce",
+        "rows": 22393
+      },
+      {
+        "path": "ADA-EUR-2026-07.parquet",
+        "sha256": "e6c3a65f0d1d3934a555fd63eecc65ee4b95d0c8071628a904e613a37b3d723e",
+        "rows": 21117
+      },
+      {
+        "path": "BTC-EUR-2022-11.parquet",
+        "sha256": "e70566885654f47e9103617ad9c287ff64c1a9ed7ea8773998cb313724dfe330",
+        "rows": 42934
+      },
+      {
+        "path": "BTC-EUR-2022-12.parquet",
+        "sha256": "299d6a0183ed3da7aa5c3d70004e06fd20865e5cf6aa693c30033ce808aacf5f",
+        "rows": 44060
+      },
+      {
+        "path": "BTC-EUR-2023-01.parquet",
+        "sha256": "21a09f096f960961dc9dd900c16217d496e5b2f3d81301cc4919d63c7aa3c0b0",
+        "rows": 44271
+      },
+      {
+        "path": "BTC-EUR-2023-02.parquet",
+        "sha256": "f918a3b0401c2a1f042b098fe25636706bcbc58e9f031c2f565a405993577366",
+        "rows": 39990
+      },
+      {
+        "path": "BTC-EUR-2023-03.parquet",
+        "sha256": "f0c9f0f278f918a7b49c1cd65ad3d0577493a80fea0b0c7bda782a244a300e9a",
+        "rows": 44473
+      },
+      {
+        "path": "BTC-EUR-2023-04.parquet",
+        "sha256": "b0bfef1f20dd44099f6f7db7d7ad8abcb0abb567c2d8c2dad5b571055a21d6ec",
+        "rows": 43006
+      },
+      {
+        "path": "BTC-EUR-2023-05.parquet",
+        "sha256": "b0b0c778668ab5734ea0abe6f11586562fa956ce2784b7eec906af6e58409e07",
+        "rows": 44237
+      },
+      {
+        "path": "BTC-EUR-2023-06.parquet",
+        "sha256": "5a817a40abdd5e9bc6e7e8103b1740fb70a66ac1e4f34316b862d3a6154a14c6",
+        "rows": 42721
+      },
+      {
+        "path": "BTC-EUR-2023-07.parquet",
+        "sha256": "49d810bf2645605416a8488a9d55a51b71081983b97167be9a239d0d384fe044",
+        "rows": 43859
+      },
+      {
+        "path": "BTC-EUR-2023-08.parquet",
+        "sha256": "14c73b1a62226f7fcc809e4e53877f166c1f36c1a28b45e38bf2a59caecac870",
+        "rows": 43931
+      },
+      {
+        "path": "BTC-EUR-2023-09.parquet",
+        "sha256": "b9250cfba23bccce8754490b30da7e2231235000ececa39029ca95a626bc11d5",
+        "rows": 42382
+      },
+      {
+        "path": "BTC-EUR-2023-10.parquet",
+        "sha256": "436b4082cbc7094bf4b6244934691889e15658ba93b1cd6aa5a2b491aaad8374",
+        "rows": 44032
+      },
+      {
+        "path": "BTC-EUR-2023-11.parquet",
+        "sha256": "bf0c9ac633a111455e481e55efd268c221351866b428a422617f477118639a27",
+        "rows": 42839
+      },
+      {
+        "path": "BTC-EUR-2023-12.parquet",
+        "sha256": "9c5609baaa02e8c0bf0cb480dc4ee79853e5a19c1edcfccf0339bceb242b2685",
+        "rows": 44190
+      },
+      {
+        "path": "BTC-EUR-2024-01.parquet",
+        "sha256": "9a379cdda1f32cb82cf831ca54389a2691d2b0c6c9da5a9a59d4a6caf9e6b5e5",
+        "rows": 43628
+      },
+      {
+        "path": "BTC-EUR-2024-02.parquet",
+        "sha256": "9835bb3c3c6bf9b982d918db64543347fe06ffc7d3fab35d517722cb7c32a3c6",
+        "rows": 41316
+      },
+      {
+        "path": "BTC-EUR-2024-03.parquet",
+        "sha256": "1b8927e39a692e4f1ad9c916b7da0235940df3d5e304568fa77c70f9cbde8dab",
+        "rows": 44359
+      },
+      {
+        "path": "BTC-EUR-2024-04.parquet",
+        "sha256": "25d845d3e718036d1d58c868bca538f5bcaa61cfd95e98396234be5f218ee93e",
+        "rows": 42165
+      },
+      {
+        "path": "BTC-EUR-2024-05.parquet",
+        "sha256": "82cb131553e4111faef8a98d1ec6fd60a69cba38b82b4ba7973ffb5b04bd5cf4",
+        "rows": 43523
+      },
+      {
+        "path": "BTC-EUR-2024-06.parquet",
+        "sha256": "e6795a6c6f458ad4bf9aa6dbaecbbffe1aa16f2a1845ffea575b320a66fdb315",
+        "rows": 42117
+      },
+      {
+        "path": "BTC-EUR-2024-07.parquet",
+        "sha256": "8407395b579a095e4b828ac73cc873bbd4eea49c958e7285a9a45317002a6878",
+        "rows": 43865
+      },
+      {
+        "path": "BTC-EUR-2024-08.parquet",
+        "sha256": "d2f7d9e784a7f11c718a3662dddb33c65b3838a31200b0287fb40c0c0d1264c2",
+        "rows": 43921
+      },
+      {
+        "path": "BTC-EUR-2024-09.parquet",
+        "sha256": "5633af72d0a6dfb87de4350117a63be0a0c425c89bfa4a61687696d281218b95",
+        "rows": 42187
+      },
+      {
+        "path": "BTC-EUR-2024-10.parquet",
+        "sha256": "7c6075909451f2c711d5b2ed389da49ecfba9dbd3a78227612e6375ac7d34ca4",
+        "rows": 43997
+      },
+      {
+        "path": "BTC-EUR-2024-11.parquet",
+        "sha256": "1f85a558df772afe2b7dd8d340c55c95de3b385f4f799dda84196f41ef8b37ba",
+        "rows": 42981
+      },
+      {
+        "path": "BTC-EUR-2024-12.parquet",
+        "sha256": "3aec0e37b4820a21f2a2feea8bb9352d939f6f20d4c86e5424bd9212a889d7a6",
+        "rows": 44418
+      },
+      {
+        "path": "BTC-EUR-2025-01.parquet",
+        "sha256": "c92b87bd9f0ded83c20b685737116e33ac7df95af7f6cbeecba44e7c0b1009c9",
+        "rows": 44048
+      },
+      {
+        "path": "BTC-EUR-2025-02.parquet",
+        "sha256": "d889f6ba0af9f7c68f5e72ef1a6a714b4ba02b627ee48dac2b4f27f07404cc8c",
+        "rows": 40028
+      },
+      {
+        "path": "BTC-EUR-2025-03.parquet",
+        "sha256": "737c2d3ad156eb7b19cec1f30976224a2efd0b617b70198da2e354b727c40201",
+        "rows": 44256
+      },
+      {
+        "path": "BTC-EUR-2025-04.parquet",
+        "sha256": "e57d6f431355e47106cc3badf14fff8a438e38484e0d0dfd57113e325ae9c089",
+        "rows": 42752
+      },
+      {
+        "path": "BTC-EUR-2025-05.parquet",
+        "sha256": "67dc0745b7d07fe09fd4b9a67c71eb1d0c805182f78a68fe530f0b16c1fd65c7",
+        "rows": 44352
+      },
+      {
+        "path": "BTC-EUR-2025-06.parquet",
+        "sha256": "e20c86e10b3609722526d89c9a0ad117f6b3adb2de8f4d57514591c084794c68",
+        "rows": 42959
+      },
+      {
+        "path": "BTC-EUR-2025-07.parquet",
+        "sha256": "b1956968751f264e05178096b312db5e95dba12f3a97f8ffb9377dd4826bfc60",
+        "rows": 44386
+      },
+      {
+        "path": "BTC-EUR-2025-08.parquet",
+        "sha256": "a5dd2ce8849eb08f4ab7327895fe4a8791342ae5ea3d4622b9e5ac8fb799b719",
+        "rows": 44271
+      },
+      {
+        "path": "BTC-EUR-2025-09.parquet",
+        "sha256": "9e9d5860cb1ec9da1be7c1119d6083601a83161df320d538cac3554929c90aa9",
+        "rows": 42955
+      },
+      {
+        "path": "BTC-EUR-2025-10.parquet",
+        "sha256": "71ace465fb809fe0a41fa461f1d628d0b27cda2d7bbcfed632bb2924f96f319d",
+        "rows": 44444
+      },
+      {
+        "path": "BTC-EUR-2025-11.parquet",
+        "sha256": "5def126d6e29c013ef613aea4d1dc1e3f6aeac65523bf3446f535910897135ad",
+        "rows": 42589
+      },
+      {
+        "path": "BTC-EUR-2025-12.parquet",
+        "sha256": "285b0a46537e7d43e228224ebc994197685f85d0d3237c308f136640b8837e2d",
+        "rows": 44507
+      },
+      {
+        "path": "BTC-EUR-2026-01.parquet",
+        "sha256": "ee02764bc2eb00ea52d502bd5fb2a05274a82880448817216db7560c6505ef51",
+        "rows": 44454
+      },
+      {
+        "path": "BTC-EUR-2026-02.parquet",
+        "sha256": "edd889093b8483fdeb46df02b5b587811c4e7d49ffd490347bd061dd1e5f7969",
+        "rows": 40222
+      },
+      {
+        "path": "BTC-EUR-2026-03.parquet",
+        "sha256": "a9e0145f97c6606c762c46ee5bb956c2fc82b925ad809327a40c7d3cb05d86e4",
+        "rows": 44586
+      },
+      {
+        "path": "BTC-EUR-2026-04.parquet",
+        "sha256": "2e3ad9ca7ad1ab1d1b3c40a402242c74159240ec745a515bb79040f3e7bae105",
+        "rows": 43062
+      },
+      {
+        "path": "BTC-EUR-2026-05.parquet",
+        "sha256": "745e07c5680b8b2774441429b4e08d232c13cd6d6d6498aa34d081d7320557f4",
+        "rows": 44523
+      },
+      {
+        "path": "BTC-EUR-2026-06.parquet",
+        "sha256": "990e838da8cfcddc1df1c45ad4e661835a17399d52d4e4ed748f9e591ae995f1",
+        "rows": 43137
+      },
+      {
+        "path": "BTC-EUR-2026-07.parquet",
+        "sha256": "41306cdfb7af9ccc53a7b3a17ce126f6d96cd2aff456d3232cd203f1f3b97872",
+        "rows": 44444
+      },
+      {
+        "path": "ETH-EUR-2022-11.parquet",
+        "sha256": "2bbb28eb8d423e8041836a0cf5e700c317505cfa11c74ee83eeb0d972281f67d",
+        "rows": 38377
+      },
+      {
+        "path": "ETH-EUR-2022-12.parquet",
+        "sha256": "7307fee61c0156dce9e222fcc48a9a7d416ceda997c29cab39612222c0b962e7",
+        "rows": 36697
+      },
+      {
+        "path": "ETH-EUR-2023-01.parquet",
+        "sha256": "8e8325db621cf02b49dfe384847df8afd363ca21a04106ca4988849672a2e5db",
+        "rows": 39014
+      },
+      {
+        "path": "ETH-EUR-2023-02.parquet",
+        "sha256": "c0eb73a52064c465538be83b26b6bb10e4589a9a29f16f6b951b815fbee42f94",
+        "rows": 35617
+      },
+      {
+        "path": "ETH-EUR-2023-03.parquet",
+        "sha256": "3cb083d558a340a9635e4609bb1ce83ad184c967b6515d64a112ad776e215755",
+        "rows": 41122
+      },
+      {
+        "path": "ETH-EUR-2023-04.parquet",
+        "sha256": "aed85cc9d4ff9ed347ad60fd5d1d5d8c6d2927acaa1991e9b226c175d7f58dea",
+        "rows": 40140
+      },
+      {
+        "path": "ETH-EUR-2023-05.parquet",
+        "sha256": "8e400bbf0246aa5e6232e83a95719a7fb98c62ddb302a02340df8221177b20bf",
+        "rows": 41500
+      },
+      {
+        "path": "ETH-EUR-2023-06.parquet",
+        "sha256": "fc92f7b0989cd9719e94137b4c583c9d7759608b4f30a79122add1bb055f4b98",
+        "rows": 37571
+      },
+      {
+        "path": "ETH-EUR-2023-07.parquet",
+        "sha256": "e6ba54f4bce3b447744dd382f889b47301c7eb9e6d825746b26bc1fd4a2e2638",
+        "rows": 37965
+      },
+      {
+        "path": "ETH-EUR-2023-08.parquet",
+        "sha256": "0cb1e2991e3adee82c8c702bc2d824f3dc7d6945ee1670a4a37ef895fbe9f1a5",
+        "rows": 38655
+      },
+      {
+        "path": "ETH-EUR-2023-09.parquet",
+        "sha256": "a8aab73bf73cbfedd892b63fca64391cf5951b0e16e50028fe687ffbdb1a2a57",
+        "rows": 36911
+      },
+      {
+        "path": "ETH-EUR-2023-10.parquet",
+        "sha256": "725d4534d066c759a44d179a4f60c2ee652839a31d10fe8702abb0a3e7497431",
+        "rows": 38781
+      },
+      {
+        "path": "ETH-EUR-2023-11.parquet",
+        "sha256": "f40098e974fae94ad24b070dcf9a4609f6adc8a8f26a8e4e107800bd052f08dd",
+        "rows": 39277
+      },
+      {
+        "path": "ETH-EUR-2023-12.parquet",
+        "sha256": "8884b6c67a4f85297303da887699b09adb915973b9ddb21d0faab8c99f6de8c6",
+        "rows": 41649
+      },
+      {
+        "path": "ETH-EUR-2024-01.parquet",
+        "sha256": "cfa664ec3c1e6964dac6a02a1b55b58265e94143c391fbe53011968651b23284",
+        "rows": 40391
+      },
+      {
+        "path": "ETH-EUR-2024-02.parquet",
+        "sha256": "440fd488299e2403426eaff5e4415e07b2b92cb921195c1732f9307dfbeaf875",
+        "rows": 40163
+      },
+      {
+        "path": "ETH-EUR-2024-03.parquet",
+        "sha256": "2690644b670c1b8aca03721a11a156ff6d143b76accbf2dd6b9590045773383e",
+        "rows": 44163
+      },
+      {
+        "path": "ETH-EUR-2024-04.parquet",
+        "sha256": "f6d02fd6e362bf5e663fa7ffd527e303a1e895c91f843f944b5f27a6f9625baa",
+        "rows": 41939
+      },
+      {
+        "path": "ETH-EUR-2024-05.parquet",
+        "sha256": "6e123f6352d2da6e8532fd826aaebb60f62bed35a0e6abba0a27b97e94f6da98",
+        "rows": 43049
+      },
+      {
+        "path": "ETH-EUR-2024-06.parquet",
+        "sha256": "eb3b9f71bad4118dfe30333cc746f92d0e3d162b0e201d22fced8741c0a5e3d6",
+        "rows": 41014
+      },
+      {
+        "path": "ETH-EUR-2024-07.parquet",
+        "sha256": "203917270c14322c16e6651ba279b19049782190e4a5f9ed959446f1c689414f",
+        "rows": 42612
+      },
+      {
+        "path": "ETH-EUR-2024-08.parquet",
+        "sha256": "aac2f16b3a7a610d312c52d53b116bd164d1917fcd93c3cb86933f0d62246998",
+        "rows": 42691
+      },
+      {
+        "path": "ETH-EUR-2024-09.parquet",
+        "sha256": "91e8c44bebc23148624aecd486cb1fb79d0251e417d30785d6731d29019a755e",
+        "rows": 40501
+      },
+      {
+        "path": "ETH-EUR-2024-10.parquet",
+        "sha256": "b97f6ab7cc6bc5605c5ba93c2deed7eb1b02f6032cfdcc2c1bf962dc75bab784",
+        "rows": 42128
+      },
+      {
+        "path": "ETH-EUR-2024-11.parquet",
+        "sha256": "1810658d56f30021d1867a32ef8d4abdf1246d63d49952aab475d3f7c2f8dea2",
+        "rows": 42323
+      },
+      {
+        "path": "ETH-EUR-2024-12.parquet",
+        "sha256": "a9241d67e52dae1e1bdb3ecf21344eaf7be6ffdf83d6ed19258a0cc36e961e31",
+        "rows": 44021
+      },
+      {
+        "path": "ETH-EUR-2025-01.parquet",
+        "sha256": "3289a9fd40c2876728f2b753956b81b0f7e5a3e7e22176186f1ef714eedb70a2",
+        "rows": 43506
+      },
+      {
+        "path": "ETH-EUR-2025-02.parquet",
+        "sha256": "db76302a55b6b1d94f4493d6ad42a7799dc00968fccd9cb76caa4ac44a6e07d2",
+        "rows": 39196
+      },
+      {
+        "path": "ETH-EUR-2025-03.parquet",
+        "sha256": "261c5a4adedc67f8a5f1d7176bca88cf2763d0e05480790323befd5731effacf",
+        "rows": 43065
+      },
+      {
+        "path": "ETH-EUR-2025-04.parquet",
+        "sha256": "2a1dc9d4305ffc915c27c6ba20d0b3a957cdb1ce8f739652f5056ab771b709db",
+        "rows": 41385
+      },
+      {
+        "path": "ETH-EUR-2025-05.parquet",
+        "sha256": "7c3a46867a4a4880d0a0f9f886b52da5ce932ed32f75fee9e63c14789dfb2946",
+        "rows": 43449
+      },
+      {
+        "path": "ETH-EUR-2025-06.parquet",
+        "sha256": "a5cc5922220828849f51a47ab17f43bc08758dd6ec0de30399b57a260d232cd8",
+        "rows": 41975
+      },
+      {
+        "path": "ETH-EUR-2025-07.parquet",
+        "sha256": "db7df6712da6807ae83e308d3d1cefb5895292276e23f92469c48828e69970ba",
+        "rows": 43687
+      },
+      {
+        "path": "ETH-EUR-2025-08.parquet",
+        "sha256": "1179fd860b2f984cf7b554214c1dd58f26946c46332dca1af6ea89193ffc29a5",
+        "rows": 43822
+      },
+      {
+        "path": "ETH-EUR-2025-09.parquet",
+        "sha256": "88f5ed7af4d6e5bfedfc0d0c4ccc92bd5c18a39b048f91ec5c7d50cfff2bd4f2",
+        "rows": 41941
+      },
+      {
+        "path": "ETH-EUR-2025-10.parquet",
+        "sha256": "5f5c0aa0588db8f18a34171a3e04a800d35988a714907d8331283518dadeee1e",
+        "rows": 43471
+      },
+      {
+        "path": "ETH-EUR-2025-11.parquet",
+        "sha256": "11da85898e5f83d297fa35b6181bdf65972b98183ae15e0b07323397ce170df5",
+        "rows": 41747
+      },
+      {
+        "path": "ETH-EUR-2025-12.parquet",
+        "sha256": "573b4c9b4c3afb2efeead5727e2646b0cadb4b050b2b6b6a61b1f15b25bc32cd",
+        "rows": 43410
+      },
+      {
+        "path": "ETH-EUR-2026-01.parquet",
+        "sha256": "287980af529a9f116c1f4194bc101f5013af85014fd21679e2a6fa0efc22641d",
+        "rows": 43418
+      },
+      {
+        "path": "ETH-EUR-2026-02.parquet",
+        "sha256": "515fa19758f6f8f3b865b1ee66e7d6ff40b46afae39d018ed1b3f5edc34efda1",
+        "rows": 39483
+      },
+      {
+        "path": "ETH-EUR-2026-03.parquet",
+        "sha256": "7c72bdf328e0d28a71c170e19d9a28152d46081b760e4757e1927c98ead46ef4",
+        "rows": 43396
+      },
+      {
+        "path": "ETH-EUR-2026-04.parquet",
+        "sha256": "494a74fd2766e3a9554ccd420405078dfc1c320658d1b3afc030c06dbbb0280e",
+        "rows": 41718
+      },
+      {
+        "path": "ETH-EUR-2026-05.parquet",
+        "sha256": "f48e9b294f25de9737640d3ff6fe4b8e36db2738990c57f22e4f48716ee76cf7",
+        "rows": 42683
+      },
+      {
+        "path": "ETH-EUR-2026-06.parquet",
+        "sha256": "e8e626f67fb94382985482819a145286863ccfed92e28070b1196d5041899732",
+        "rows": 41688
+      },
+      {
+        "path": "ETH-EUR-2026-07.parquet",
+        "sha256": "9f676e5330007ae7db375ec394451b2cf7e5b8a8fe5e3dc4a40eabe1c4053fe2",
+        "rows": 42936
+      },
+      {
+        "path": "SOL-EUR-2022-11.parquet",
+        "sha256": "074d87ddf6c0a4b800f9a7c2bdd8ad1c47115900637a1d66869983d3aa63872d",
+        "rows": 26857
+      },
+      {
+        "path": "SOL-EUR-2022-12.parquet",
+        "sha256": "edb0700c8352de175848c0a3ab803b1c45230784c0569bd21095d25c14db6d20",
+        "rows": 17453
+      },
+      {
+        "path": "SOL-EUR-2023-01.parquet",
+        "sha256": "2e085eeb6ab78f519f910503d3a4ce5e37ed4834def76f481eabd19415da8025",
+        "rows": 27312
+      },
+      {
+        "path": "SOL-EUR-2023-02.parquet",
+        "sha256": "b2a421de96cf119ba1c04dbde2e97d5bffbe9a55702bb2042ba9115110a57329",
+        "rows": 20881
+      },
+      {
+        "path": "SOL-EUR-2023-03.parquet",
+        "sha256": "9db52c5e073492439005749f2e0073b6510a2c0f36c8f6384988a4297feb5aeb",
+        "rows": 22396
+      },
+      {
+        "path": "SOL-EUR-2023-04.parquet",
+        "sha256": "fcf5c57f0a0be6a68bd48146dd1f93d06afc47aec15c084f0d41e638f390d5e0",
+        "rows": 20496
+      },
+      {
+        "path": "SOL-EUR-2023-05.parquet",
+        "sha256": "08845da700344b6a99b64275db6ce24e9de2a9700fb9204384a004ff81790c4d",
+        "rows": 17453
+      },
+      {
+        "path": "SOL-EUR-2023-06.parquet",
+        "sha256": "50700c1a54945b98ce16bbea50bcd1fffe7d3e5678435fcc3b399e2124359f3b",
+        "rows": 20635
+      },
+      {
+        "path": "SOL-EUR-2023-07.parquet",
+        "sha256": "32d668f77c76a85c2d50f98b06a46d45d96acf58b69ea9c8ae144f54582fdda3",
+        "rows": 22221
+      },
+      {
+        "path": "SOL-EUR-2023-08.parquet",
+        "sha256": "ab2bfe2459b11d29be1cf0d20ab3e9a862a20f367f8940361064cd982d3897d8",
+        "rows": 21071
+      },
+      {
+        "path": "SOL-EUR-2023-09.parquet",
+        "sha256": "0e4b10b1ecddb0ec5796cd97bbee8d4806e0e9972f89489f039a1ff2817bce44",
+        "rows": 17241
+      },
+      {
+        "path": "SOL-EUR-2023-10.parquet",
+        "sha256": "20388f45652c5bdf62bc9ff630e247a388da16540a850a075704bff40cd08722",
+        "rows": 24323
+      },
+      {
+        "path": "SOL-EUR-2023-11.parquet",
+        "sha256": "63c07f692d2d50e72da58e17abd371847d727a635b1c979507d082198188386f",
+        "rows": 34342
+      },
+      {
+        "path": "SOL-EUR-2023-12.parquet",
+        "sha256": "f4f3ca96e6866642160e56188d4d4e353813aa0242f6617dedaa874ba2fef9fd",
+        "rows": 38319
+      },
+      {
+        "path": "SOL-EUR-2024-01.parquet",
+        "sha256": "b0eec07a2265dd542efc7c56c28d5f812d368fde17ec64c4861fd6ff11d2a96a",
+        "rows": 36156
+      },
+      {
+        "path": "SOL-EUR-2024-02.parquet",
+        "sha256": "f2d86fa0c313c3f73e3f57bd0261f97c29970a341e8d9df3e6936ca5f822bc40",
+        "rows": 31157
+      },
+      {
+        "path": "SOL-EUR-2024-03.parquet",
+        "sha256": "427f14d05d729222beacb0e7a96486bcd8a058b819f66cd7fead49dba3dd84c9",
+        "rows": 41008
+      },
+      {
+        "path": "SOL-EUR-2024-04.parquet",
+        "sha256": "d725d19296b2f727d81a7756e9e2367b58189b1656d6e2e3631ae74aaf029bea",
+        "rows": 36290
+      },
+      {
+        "path": "SOL-EUR-2024-05.parquet",
+        "sha256": "065a664c09def144804e5004d19ea9b30c46373c96585c58c85bb8cb13a5065e",
+        "rows": 36319
+      },
+      {
+        "path": "SOL-EUR-2024-06.parquet",
+        "sha256": "83f8beb635ad5902ea9c26c97a32aeeefd1ecee41aac6a6d593c847f189c6430",
+        "rows": 34852
+      },
+      {
+        "path": "SOL-EUR-2024-07.parquet",
+        "sha256": "cef7a9d2335c233118ec765fa71a21d5ff809ba29893f76ac400645c8faa6979",
+        "rows": 36778
+      },
+      {
+        "path": "SOL-EUR-2024-08.parquet",
+        "sha256": "e858a3b0327f42dd6b48c1de68be74e48bf8a2c0900cbadd160a2e45108a583b",
+        "rows": 36684
+      },
+      {
+        "path": "SOL-EUR-2024-09.parquet",
+        "sha256": "64a02d258f6970963fc9ed481c7630f846052dd0c8f7dfca3dc5aef43f6aa286",
+        "rows": 32347
+      },
+      {
+        "path": "SOL-EUR-2024-10.parquet",
+        "sha256": "1d6ab4be954783f96b9e8b1ac3413abddef1ccd22c8ce51b6f083f6448c3e04f",
+        "rows": 35177
+      },
+      {
+        "path": "SOL-EUR-2024-11.parquet",
+        "sha256": "bb65f6f2f34e66aff328210a303e5c0c556471f19165870bff72097926732961",
+        "rows": 40511
+      },
+      {
+        "path": "SOL-EUR-2024-12.parquet",
+        "sha256": "be177c2f837c03eb2164a99496dea2cfc0a2902a3986c2b9ccc6899ae3dba148",
+        "rows": 41573
+      },
+      {
+        "path": "SOL-EUR-2025-01.parquet",
+        "sha256": "cad3f8cf057681d9404377094c7604941b4d3fba6d65bfd5d5ff3e329d18685f",
+        "rows": 41266
+      },
+      {
+        "path": "SOL-EUR-2025-02.parquet",
+        "sha256": "5fb8128a5a81e9e4089f520307d6faabfeeacc051b8a08776472a93c60303a45",
+        "rows": 36541
+      },
+      {
+        "path": "SOL-EUR-2025-03.parquet",
+        "sha256": "96368223c940c4f3c364108ad44fab06ac9aba3cfcef923884c81eab7b9769fb",
+        "rows": 39040
+      },
+      {
+        "path": "SOL-EUR-2025-04.parquet",
+        "sha256": "4c90029b436c8d831d2043a864328356b664b85f42e25fde699176fb612367b4",
+        "rows": 37633
+      },
+      {
+        "path": "SOL-EUR-2025-05.parquet",
+        "sha256": "7e8417fc0648f37112e953adce658d391317782294fe5e49bfd3f0a1b91a9289",
+        "rows": 39913
+      },
+      {
+        "path": "SOL-EUR-2025-06.parquet",
+        "sha256": "efe3378997cc29d75d43aee524183a3c23fe1cea241df5a03b6c55f5b63988c0",
+        "rows": 37969
+      },
+      {
+        "path": "SOL-EUR-2025-07.parquet",
+        "sha256": "bb96394fd51a741f6fe01e43d36bed3525e1db4be2926add72bc37b765787624",
+        "rows": 41386
+      },
+      {
+        "path": "SOL-EUR-2025-08.parquet",
+        "sha256": "5f1c0ae05110f6baff82a37627e570a8aa2919573388588b3d8df487f031bded",
+        "rows": 42216
+      },
+      {
+        "path": "SOL-EUR-2025-09.parquet",
+        "sha256": "c8fe69f24e08c4833ffb415994abafbcc28d49452e8ae9d206bb6fb449d2aabf",
+        "rows": 41155
+      },
+      {
+        "path": "SOL-EUR-2025-10.parquet",
+        "sha256": "8e687d9111888184b9f1284bdf17dd4935d684444253bc1c406ecd721fed5aba",
+        "rows": 42667
+      },
+      {
+        "path": "SOL-EUR-2025-11.parquet",
+        "sha256": "80738d9423167add22db1865592153d56698cb937026b28cf3eb20d30bd243cd",
+        "rows": 41197
+      },
+      {
+        "path": "SOL-EUR-2025-12.parquet",
+        "sha256": "d654709ad8c782452c152ffe0fd9b16e2d14971db6a66fe1aa8aa7f50e0c9c3b",
+        "rows": 43130
+      },
+      {
+        "path": "SOL-EUR-2026-01.parquet",
+        "sha256": "42705560e9ea0b92bf7842b3be9932551c038098da8f42b295a470648b6477f4",
+        "rows": 43197
+      },
+      {
+        "path": "SOL-EUR-2026-02.parquet",
+        "sha256": "82ececc9256393d355cd224ec17109e7f234a44db35f0e05388e6d15fcf25657",
+        "rows": 39366
+      },
+      {
+        "path": "SOL-EUR-2026-03.parquet",
+        "sha256": "0a236fb224ad7f3519ca2a7b85de0dd8cade62a80cba5f22361dad9237095229",
+        "rows": 43421
+      },
+      {
+        "path": "SOL-EUR-2026-04.parquet",
+        "sha256": "1d4c8bdff55271bb626ad2a4827f9115eba7b93cc299fc26d0b2e0d69ec3d749",
+        "rows": 41503
+      },
+      {
+        "path": "SOL-EUR-2026-05.parquet",
+        "sha256": "e9b81016e8c681122eb004add3e1204d8d4c847864ff67c43124e1f3093bd5c6",
+        "rows": 42625
+      },
+      {
+        "path": "SOL-EUR-2026-06.parquet",
+        "sha256": "0d583166f476e1da6f84b4a4771062144b33ea46295a086dd4cf35fb1d6d61bd",
+        "rows": 41768
+      },
+      {
+        "path": "SOL-EUR-2026-07.parquet",
+        "sha256": "f5a1fd5c85618389cc435c64830b30d9a17ad75724a26b45a473345b51d9dac9",
+        "rows": 43397
+      },
+      {
+        "path": "XRP-EUR-2022-11.parquet",
+        "sha256": "b2177d759567626fad906d9b82a6a383f4443e71fff0bf301424166aacbf9abd",
+        "rows": 31821
+      },
+      {
+        "path": "XRP-EUR-2022-12.parquet",
+        "sha256": "165cf119af5e7c6ce5a27e678001485efa64d1a168c721acaeefda72eeebca1e",
+        "rows": 27987
+      },
+      {
+        "path": "XRP-EUR-2023-01.parquet",
+        "sha256": "0b93e06daab6ad614712c71327f580dc1eabc7e17ffc48c3a26d2522549d0ce9",
+        "rows": 29792
+      },
+      {
+        "path": "XRP-EUR-2023-02.parquet",
+        "sha256": "918c258da2469cd621e86b9bf092fac3c71cbfc52dcb6a8577c5ffea5793f5b9",
+        "rows": 25322
+      },
+      {
+        "path": "XRP-EUR-2023-03.parquet",
+        "sha256": "f736207fa5eb030efbf9f44a75bb7ee67bc60407f6b53dea860d5a88b0b7f56d",
+        "rows": 32911
+      },
+      {
+        "path": "XRP-EUR-2023-04.parquet",
+        "sha256": "1640bc0234229f61eb7540487b2b1fa03d7ada1ad26d1d82fe13a50a69021b2f",
+        "rows": 30085
+      },
+      {
+        "path": "XRP-EUR-2023-05.parquet",
+        "sha256": "4043fb76b9e98d5d1e2034f08b6615033c18698ca8308d46ecf467381f7946a8",
+        "rows": 28790
+      },
+      {
+        "path": "XRP-EUR-2023-06.parquet",
+        "sha256": "0bcdb0d095c802d844310ab32f8a2e6ee09994e945348f43f56826e86b63d27d",
+        "rows": 29309
+      },
+      {
+        "path": "XRP-EUR-2023-07.parquet",
+        "sha256": "3851c9d3054f44443a7689474327a01c1eedf16b78c7952eeeb0d30f4a23c087",
+        "rows": 31799
+      },
+      {
+        "path": "XRP-EUR-2023-08.parquet",
+        "sha256": "d8949ed28fc0556870f79e7a7d8dfbea602a97f7e74f4f336bfa03d600d03ffb",
+        "rows": 30815
+      },
+      {
+        "path": "XRP-EUR-2023-09.parquet",
+        "sha256": "c22b08e5624c824f36ad7c6812b01ebcb7c27f2696afa6dc095e24acce910a8b",
+        "rows": 27629
+      },
+      {
+        "path": "XRP-EUR-2023-10.parquet",
+        "sha256": "3351d436054007afba738ef101c4c1957d7f5f8cca79ae00f7122f7bb6cf9454",
+        "rows": 29306
+      },
+      {
+        "path": "XRP-EUR-2023-11.parquet",
+        "sha256": "c0288908d8fa1e95865a8481807f4cb44982a90423483e47e71e96cc88d07a00",
+        "rows": 32718
+      },
+      {
+        "path": "XRP-EUR-2023-12.parquet",
+        "sha256": "c52c14907e243aa6b6e6c6d44dc5da47a1fcecb9467ff9dff20439c10d1e7b1d",
+        "rows": 34883
+      },
+      {
+        "path": "XRP-EUR-2024-01.parquet",
+        "sha256": "fc2d3f5002c921e2ec39527cb93c8b522558203d78a18b7329e27e7040ab3059",
+        "rows": 32541
+      },
+      {
+        "path": "XRP-EUR-2024-02.parquet",
+        "sha256": "47b6ea29cf8e0d0230c026de289676ddae663630e564f4bdd206114b453d1fc4",
+        "rows": 31243
+      },
+      {
+        "path": "XRP-EUR-2024-03.parquet",
+        "sha256": "66ba89a2eb9d47ee095c59feaaac583fc9fcaf35f19c242c0ae45f9c7a47b890",
+        "rows": 37515
+      },
+      {
+        "path": "XRP-EUR-2024-04.parquet",
+        "sha256": "03fe4f48fe9a69f1341353778cd739b1be20f1a1f5a7d5bafd52d9b43d22a22b",
+        "rows": 33513
+      },
+      {
+        "path": "XRP-EUR-2024-05.parquet",
+        "sha256": "0ddb1020ab42dc7d7b05416849f170e5e345bd0f2b18df9e18e808d8b866ba90",
+        "rows": 33074
+      },
+      {
+        "path": "XRP-EUR-2024-06.parquet",
+        "sha256": "a27448c4e60dc466ce6cb95d6223f94db4da6156f501f52b39045a00aaf6ced1",
+        "rows": 31781
+      },
+      {
+        "path": "XRP-EUR-2024-07.parquet",
+        "sha256": "410c57e8c8dbfc74b48b205d84dfdd1d76522803cda8404898900135e0ac1cb8",
+        "rows": 35530
+      },
+      {
+        "path": "XRP-EUR-2024-08.parquet",
+        "sha256": "bcea8788b58478f6f3e91efa360b89779c7d4f0732c52ea5c570babc0bcbc4bb",
+        "rows": 34885
+      },
+      {
+        "path": "XRP-EUR-2024-09.parquet",
+        "sha256": "3f3567a0eeeb133687b4cb6c00799d73b0e15073875a4dc9f8a260ca042da4b7",
+        "rows": 32372
+      },
+      {
+        "path": "XRP-EUR-2024-10.parquet",
+        "sha256": "6b78bfb7b756918a40c012fa9c5040aea0e7187b25340b07f95523e4f7fa39ba",
+        "rows": 33080
+      },
+      {
+        "path": "XRP-EUR-2024-11.parquet",
+        "sha256": "47546eb22aa99f69bfc6a0480f470df861fa3e1e9bc042008ecf788629be6667",
+        "rows": 39327
+      },
+      {
+        "path": "XRP-EUR-2024-12.parquet",
+        "sha256": "a1bb00502e7c8442eba4c5c8b60f73af34d9597e40070593b65a48d0fa6f0038",
+        "rows": 42258
+      },
+      {
+        "path": "XRP-EUR-2025-01.parquet",
+        "sha256": "81562b18237d35c5d1d1bcc97ecbaf16dbcaa6e5b69e99e0333d6e6a92227387",
+        "rows": 41671
+      },
+      {
+        "path": "XRP-EUR-2025-02.parquet",
+        "sha256": "b98f611c008184888f3c051ef4b13c4605a7c707fded1263a51451b0cd211975",
+        "rows": 36545
+      },
+      {
+        "path": "XRP-EUR-2025-03.parquet",
+        "sha256": "a13c7b08b01d539f10fc704a6f2f6d954de0f422cfa6f2230c9a66044500dd0b",
+        "rows": 39568
+      },
+      {
+        "path": "XRP-EUR-2025-04.parquet",
+        "sha256": "7a5b4a06b9b081cee75bde39804e24e728cadab393a02f6d263a63df6eb49d4a",
+        "rows": 36742
+      },
+      {
+        "path": "XRP-EUR-2025-05.parquet",
+        "sha256": "8ed7a8d9dc4e2c50ce2f8ece544ebec52f1635817751ea52aa28ce1c232a986d",
+        "rows": 38077
+      },
+      {
+        "path": "XRP-EUR-2025-06.parquet",
+        "sha256": "2f7a5b2b57764de0a3f3876a194a77f856bf232ad34ac3f60090cd3094f28a20",
+        "rows": 35920
+      },
+      {
+        "path": "XRP-EUR-2025-07.parquet",
+        "sha256": "6c4c95f66e0da742265ffb602743159927103ae5263be47e131543e2fbfbb1dc",
+        "rows": 40133
+      },
+      {
+        "path": "XRP-EUR-2025-08.parquet",
+        "sha256": "c6155a4e229be19434c81b839972578f66ddee878abff4419cca0f7c786cd140",
+        "rows": 38710
+      },
+      {
+        "path": "XRP-EUR-2025-09.parquet",
+        "sha256": "a39f169989d8ab392e16660e6c7c7dd2a95d47a1fa95a1d7e0f04ec009cd5be9",
+        "rows": 36083
+      },
+      {
+        "path": "XRP-EUR-2025-10.parquet",
+        "sha256": "fdad610ce9d5c9cf18f8d53b78b90cbc11504c0f82588e0d789000f83bbb9baf",
+        "rows": 38854
+      },
+      {
+        "path": "XRP-EUR-2025-11.parquet",
+        "sha256": "e3b0ed484d6507ecb391426a36c66a3ef71fe8614917606160b2de9e924d5c2c",
+        "rows": 37537
+      },
+      {
+        "path": "XRP-EUR-2025-12.parquet",
+        "sha256": "6ce4ba29b60667b0845bcfa45bc2cc51d378a8eae0c23d64b27140fb8cda7d75",
+        "rows": 38460
+      },
+      {
+        "path": "XRP-EUR-2026-01.parquet",
+        "sha256": "2bef8fed4ac82b863872cef193fb236d754fcfea1d5bccae6197ab5770f71f8c",
+        "rows": 37771
+      },
+      {
+        "path": "XRP-EUR-2026-02.parquet",
+        "sha256": "a2c06264dbd50f4f9cabc651852d02bd0717386f8ba4ac6a4e307a1d23715b46",
+        "rows": 35435
+      },
+      {
+        "path": "XRP-EUR-2026-03.parquet",
+        "sha256": "3377344dc400ce90ed2483083642cea578bc74bf27f42eb4cfa6a48e5391cb8b",
+        "rows": 36742
+      },
+      {
+        "path": "XRP-EUR-2026-04.parquet",
+        "sha256": "e93ac1e015d64fc9cc9a0fcbb988807558b2a264d0c6d06d783c6e814ff310f3",
+        "rows": 33019
+      },
+      {
+        "path": "XRP-EUR-2026-05.parquet",
+        "sha256": "342d826a351d699a0e1a9a320451835822cc4d5d7a2095f7137b897cfc6a0708",
+        "rows": 35245
+      },
+      {
+        "path": "XRP-EUR-2026-06.parquet",
+        "sha256": "606eec49e1e11beac877ef0cdd996730e98368a0d6dc142918dcce8965fc1df4",
+        "rows": 36274
+      },
+      {
+        "path": "XRP-EUR-2026-07.parquet",
+        "sha256": "8b02dbb7a1416a157442a724bcfab65a4993eee8e54dc7c999f28e466899eda8",
+        "rows": 35627
+      }
+    ],
+    "synthetic": false,
+    "accepted": false,
+    "notes": [
+      "No-candle intervals are unknown/no-trade; they are never executable synthetic candles.",
+      "Separate Kraken comparison data; never a Bitvavo gap repair. Default execution costs/rules remain Bitvavo research assumptions, not calibrated Kraken fills."
+    ]
+  },
+  "accepted_manifest": {
+    "sources": [
+      {
+        "file": "BTC-EUR_1.csv",
+        "sha256": "0b2b1fea40a7d6139ff21ce5488158b38b80012f3540f8246efcd3e78a53f45d"
+      },
+      {
+        "file": "ETH-EUR_1.csv",
+        "sha256": "a66013cab926bda6fdb7675b37a1d174a2fb132b5560c110ac1bdfa97780d928"
+      },
+      {
+        "file": "SOL-EUR_1.csv",
+        "sha256": "9e3b8ba0472ab9b4c88f885a3a8a510c99d925e550b456d9d5657b8d25ab810b"
+      },
+      {
+        "file": "XRP-EUR_1.csv",
+        "sha256": "b35dd36464a27dc3c4e7fb6bcb7a58bf8888008cd17e87bdaf93323169807c8b"
+      },
+      {
+        "file": "ADA-EUR_1.csv",
+        "sha256": "23d32333c65abcf5df5ff0536207598a50f2ce49e2d626e293ce511b516698e4"
+      },
+      {
+        "file": "origin.json",
+        "sha256": "7711c5fe50c4b37810c8ba0584431da26029880e31061dc7810115ef5eff534e"
+      }
+    ],
+    "id": "3a1a4d25916723b1604533a1227a7372363131739d132b38834aa4e603a243f1",
+    "venue": "kraken",
+    "start": 1667260800000,
+    "end": 1785542400000,
+    "created_at": 1793813706761,
+    "coverage": [
+      {
+        "market": "BTC-EUR",
+        "rows": 1951377,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 19983,
+        "largest_gap_minutes": 411
+      },
+      {
+        "market": "ETH-EUR",
+        "rows": 1854247,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 117113,
+        "largest_gap_minutes": 411
+      },
+      {
+        "market": "SOL-EUR",
+        "rows": 1549242,
+        "first": 1667261100000,
+        "last": 1785542340000,
+        "missing_minutes": 422118,
+        "largest_gap_minutes": 413
+      },
+      {
+        "market": "XRP-EUR",
+        "rows": 1548699,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 422661,
+        "largest_gap_minutes": 419
+      },
+      {
+        "market": "ADA-EUR",
+        "rows": 1015919,
+        "first": 1667260800000,
+        "last": 1785542340000,
+        "missing_minutes": 955441,
+        "largest_gap_minutes": 412
+      }
+    ],
+    "partitions": [
+      {
+        "path": "ADA-EUR-2022-11.parquet",
+        "sha256": "d65605bd8b2ca8b134e25385c11d84fed9561788ed35c64ec9ef17437924b1ff",
+        "rows": 23710
+      },
+      {
+        "path": "ADA-EUR-2022-12.parquet",
+        "sha256": "73c33368f6a634afcee28b2b97a7859f6548a2c89c84ace1cdcf85263c09be00",
+        "rows": 19846
+      },
+      {
+        "path": "ADA-EUR-2023-01.parquet",
+        "sha256": "26e51f285d1d88adc699feedb275f40f233ce4bb60e35dfe7a9215ad94d2e03e",
+        "rows": 24689
+      },
+      {
+        "path": "ADA-EUR-2023-02.parquet",
+        "sha256": "190b2a8be3199ca4c552a05470fd3439f68529a81c413301d05ed6a995f89980",
+        "rows": 21214
+      },
+      {
+        "path": "ADA-EUR-2023-03.parquet",
+        "sha256": "5d27c4115d8b51132e0906b2568d5d80a15bee268f4424a8c25e6963ce2b057f",
+        "rows": 24666
+      },
+      {
+        "path": "ADA-EUR-2023-04.parquet",
+        "sha256": "3da763b9592ce7c9662e82f96ff6bd795f9b5d9cd324fa5281e34077ebc49911",
+        "rows": 22332
+      },
+      {
+        "path": "ADA-EUR-2023-05.parquet",
+        "sha256": "012d952ac5eaa4918975551ae30f65e313ea8c291ffedfbafe848def22d972d4",
+        "rows": 18720
+      },
+      {
+        "path": "ADA-EUR-2023-06.parquet",
+        "sha256": "8573c27911e1d275c26c519f09036905f77ae3e93217acc37adfe3b1c6fee161",
+        "rows": 22859
+      },
+      {
+        "path": "ADA-EUR-2023-07.parquet",
+        "sha256": "97351461086239063523eabc82469db7e085db68a6d1f92ce0a422604a3cff94",
+        "rows": 19900
+      },
+      {
+        "path": "ADA-EUR-2023-08.parquet",
+        "sha256": "aa4dbc8edd2950f160291ba8eecd3340cf8795861ba18016a76b149477da3d74",
+        "rows": 20498
+      },
+      {
+        "path": "ADA-EUR-2023-09.parquet",
+        "sha256": "a8587618c5adeee25ac93c1f7a4c64546f5e5e3bf2d10cc14c866e099ca4c4c0",
+        "rows": 17133
+      },
+      {
+        "path": "ADA-EUR-2023-10.parquet",
+        "sha256": "b473da0511fa608ac6615534b704f5b53d9fa7526c80f600338b148f68c2072e",
+        "rows": 19801
+      },
+      {
+        "path": "ADA-EUR-2023-11.parquet",
+        "sha256": "cad37347ce522ade6dcb6012a81d66ef3b61f8493ff31b83504589194ddff60f",
+        "rows": 27054
+      },
+      {
+        "path": "ADA-EUR-2023-12.parquet",
+        "sha256": "34e2028ac3d67a232151c96483c8375bf933348063e1f63a05fd401451276646",
+        "rows": 31834
+      },
+      {
+        "path": "ADA-EUR-2024-01.parquet",
+        "sha256": "39df8822ab4eec34356f81b72eb3fede9522f0d07e5b379e8321bbd3d2df9944",
+        "rows": 25930
+      },
+      {
+        "path": "ADA-EUR-2024-02.parquet",
+        "sha256": "e4418d7d4912533df81c687c134930f26ccd3025280bed74df71e247083fae4f",
+        "rows": 25008
+      },
+      {
+        "path": "ADA-EUR-2024-03.parquet",
+        "sha256": "ef529893bc3538081c01f1bfb0ec642f1bfd2b6651b5eaba0a5841642ca48424",
+        "rows": 31959
+      },
+      {
+        "path": "ADA-EUR-2024-04.parquet",
+        "sha256": "b9cb5af42f7557d1db8c6008298c712b32b386afd855364d5a7330c403535f2d",
+        "rows": 23930
+      },
+      {
+        "path": "ADA-EUR-2024-05.parquet",
+        "sha256": "a77fb68a56738430bc7d1bb4ebc9429f8b0cbc1cf86d1046fa663428b1b452cf",
+        "rows": 19597
+      },
+      {
+        "path": "ADA-EUR-2024-06.parquet",
+        "sha256": "47a0d5ee1c8886508dac4246243ceac64eb8938b94086abe5cc2a046faf7f5ef",
+        "rows": 17176
+      },
+      {
+        "path": "ADA-EUR-2024-07.parquet",
+        "sha256": "3fae545cf426b79b8d3d97ea061f5d4f88b21206083a46ec836b6d13c1a2630f",
+        "rows": 17222
+      },
+      {
+        "path": "ADA-EUR-2024-08.parquet",
+        "sha256": "aab6a6f4b91aa71fa0e984e09b8e9dc2b30c6abb76884a24d8d0d2ae07c61dbb",
+        "rows": 16052
+      },
+      {
+        "path": "ADA-EUR-2024-09.parquet",
+        "sha256": "1ca08df613f25842ac263eb49608bf3c92a006824e1223aefd4cfa0f96bc5428",
+        "rows": 14388
+      },
+      {
+        "path": "ADA-EUR-2024-10.parquet",
+        "sha256": "eb1d1385088985b8ed4860216a079ef84d6dfd20246bc99f59916ee9c2ac2f28",
+        "rows": 14230
+      },
+      {
+        "path": "ADA-EUR-2024-11.parquet",
+        "sha256": "87b97f88e0bcf2037eb4d45d4c116b3099421748bc6b350d23843265ac47bbfd",
+        "rows": 32915
+      },
+      {
+        "path": "ADA-EUR-2024-12.parquet",
+        "sha256": "186a891e0bb0cc0a66b07c7faf9d6218a3db0c888aec08f9a9e05700fe0f3b97",
+        "rows": 32228
+      },
+      {
+        "path": "ADA-EUR-2025-01.parquet",
+        "sha256": "0a7c0294318a04df5b8c002b953123cda4fd09e4a757aa02768d73409f65a161",
+        "rows": 30657
+      },
+      {
+        "path": "ADA-EUR-2025-02.parquet",
+        "sha256": "6ff9e479559a1b1fde3889d5479091524fc6045ceeec553dde5a16b1815a9495",
+        "rows": 23932
+      },
+      {
+        "path": "ADA-EUR-2025-03.parquet",
+        "sha256": "9b4b32dc6b49bbb48dd7a726df5f092b65909b145a625772d15c8632fd3e06db",
+        "rows": 26126
+      },
+      {
+        "path": "ADA-EUR-2025-04.parquet",
+        "sha256": "1dca4261e22852634c22afa6a77042cd7a1913d8da8b8f972beddb0c9da4b4bd",
+        "rows": 21988
+      },
+      {
+        "path": "ADA-EUR-2025-05.parquet",
+        "sha256": "2ea176da62325aaaa92cfc771c33dce1f861fce6b751b020a4f8f91ed14d5ac3",
+        "rows": 23035
+      },
+      {
+        "path": "ADA-EUR-2025-06.parquet",
+        "sha256": "0904f66e2090adf918cf145bd9ace657c0825a91146b95919d3d01ac0b356337",
+        "rows": 19376
+      },
+      {
+        "path": "ADA-EUR-2025-07.parquet",
+        "sha256": "b1c468210b686139e751d15ff32e0fb4d2c2881e4b864200f67cbe9943de4367",
+        "rows": 25801
+      },
+      {
+        "path": "ADA-EUR-2025-08.parquet",
+        "sha256": "9cd47b95902469dc56fe8ff24e28c50c265a7c93f96ddb0d475616425d951a38",
+        "rows": 25550
+      },
+      {
+        "path": "ADA-EUR-2025-09.parquet",
+        "sha256": "c58c54b42330501737385de72c597ee92de4a0426737151cfa332137e41c4965",
+        "rows": 21280
+      },
+      {
+        "path": "ADA-EUR-2025-10.parquet",
+        "sha256": "0183921b937b47a0628c69fa864feeab253848dc29c174b1db40cd17123b355d",
+        "rows": 25268
+      },
+      {
+        "path": "ADA-EUR-2025-11.parquet",
+        "sha256": "13f4ac078f5f04fb9b32f2acfc4e319eff355bdd30c16cbde4465f27eddf0c74",
+        "rows": 24590
+      },
+      {
+        "path": "ADA-EUR-2025-12.parquet",
+        "sha256": "dd60b1d5a365fb7ceb1528b5ae1b7e1214a98a492a2f4bf2e4dc2d47837912ee",
+        "rows": 23697
+      },
+      {
+        "path": "ADA-EUR-2026-01.parquet",
+        "sha256": "934b4f29d1199878ce50802c4f1ce7eff6c014ed693ce38bf35b924645ba0185",
+        "rows": 22709
+      },
+      {
+        "path": "ADA-EUR-2026-02.parquet",
+        "sha256": "484c80c3ddacc5bebc9e1a0a171c258eebbb7cf7459a8b0ff1cc5c4c85ea74ac",
+        "rows": 22102
+      },
+      {
+        "path": "ADA-EUR-2026-03.parquet",
+        "sha256": "a445f0212a035a857e3b25038d784de13e61c954aa7829b4efd8a31512b41b39",
+        "rows": 17889
+      },
+      {
+        "path": "ADA-EUR-2026-04.parquet",
+        "sha256": "c8db2645ccbfe1bb8b436ebd829b594c956c6dd31c11763b6a85c70bcfb9c0a1",
+        "rows": 17576
+      },
+      {
+        "path": "ADA-EUR-2026-05.parquet",
+        "sha256": "496a693b359b76de9dad3940fbb8f23010d14e15066607c8ec6a8005202eac25",
+        "rows": 15942
+      },
+      {
+        "path": "ADA-EUR-2026-06.parquet",
+        "sha256": "1c99d14558492fd9812e27c8914cabe538f9a1a6cb200b3dcb788004a8b758ce",
+        "rows": 22393
+      },
+      {
+        "path": "ADA-EUR-2026-07.parquet",
+        "sha256": "e6c3a65f0d1d3934a555fd63eecc65ee4b95d0c8071628a904e613a37b3d723e",
+        "rows": 21117
+      },
+      {
+        "path": "BTC-EUR-2022-11.parquet",
+        "sha256": "e70566885654f47e9103617ad9c287ff64c1a9ed7ea8773998cb313724dfe330",
+        "rows": 42934
+      },
+      {
+        "path": "BTC-EUR-2022-12.parquet",
+        "sha256": "299d6a0183ed3da7aa5c3d70004e06fd20865e5cf6aa693c30033ce808aacf5f",
+        "rows": 44060
+      },
+      {
+        "path": "BTC-EUR-2023-01.parquet",
+        "sha256": "21a09f096f960961dc9dd900c16217d496e5b2f3d81301cc4919d63c7aa3c0b0",
+        "rows": 44271
+      },
+      {
+        "path": "BTC-EUR-2023-02.parquet",
+        "sha256": "f918a3b0401c2a1f042b098fe25636706bcbc58e9f031c2f565a405993577366",
+        "rows": 39990
+      },
+      {
+        "path": "BTC-EUR-2023-03.parquet",
+        "sha256": "f0c9f0f278f918a7b49c1cd65ad3d0577493a80fea0b0c7bda782a244a300e9a",
+        "rows": 44473
+      },
+      {
+        "path": "BTC-EUR-2023-04.parquet",
+        "sha256": "b0bfef1f20dd44099f6f7db7d7ad8abcb0abb567c2d8c2dad5b571055a21d6ec",
+        "rows": 43006
+      },
+      {
+        "path": "BTC-EUR-2023-05.parquet",
+        "sha256": "b0b0c778668ab5734ea0abe6f11586562fa956ce2784b7eec906af6e58409e07",
+        "rows": 44237
+      },
+      {
+        "path": "BTC-EUR-2023-06.parquet",
+        "sha256": "5a817a40abdd5e9bc6e7e8103b1740fb70a66ac1e4f34316b862d3a6154a14c6",
+        "rows": 42721
+      },
+      {
+        "path": "BTC-EUR-2023-07.parquet",
+        "sha256": "49d810bf2645605416a8488a9d55a51b71081983b97167be9a239d0d384fe044",
+        "rows": 43859
+      },
+      {
+        "path": "BTC-EUR-2023-08.parquet",
+        "sha256": "14c73b1a62226f7fcc809e4e53877f166c1f36c1a28b45e38bf2a59caecac870",
+        "rows": 43931
+      },
+      {
+        "path": "BTC-EUR-2023-09.parquet",
+        "sha256": "b9250cfba23bccce8754490b30da7e2231235000ececa39029ca95a626bc11d5",
+        "rows": 42382
+      },
+      {
+        "path": "BTC-EUR-2023-10.parquet",
+        "sha256": "436b4082cbc7094bf4b6244934691889e15658ba93b1cd6aa5a2b491aaad8374",
+        "rows": 44032
+      },
+      {
+        "path": "BTC-EUR-2023-11.parquet",
+        "sha256": "bf0c9ac633a111455e481e55efd268c221351866b428a422617f477118639a27",
+        "rows": 42839
+      },
+      {
+        "path": "BTC-EUR-2023-12.parquet",
+        "sha256": "9c5609baaa02e8c0bf0cb480dc4ee79853e5a19c1edcfccf0339bceb242b2685",
+        "rows": 44190
+      },
+      {
+        "path": "BTC-EUR-2024-01.parquet",
+        "sha256": "9a379cdda1f32cb82cf831ca54389a2691d2b0c6c9da5a9a59d4a6caf9e6b5e5",
+        "rows": 43628
+      },
+      {
+        "path": "BTC-EUR-2024-02.parquet",
+        "sha256": "9835bb3c3c6bf9b982d918db64543347fe06ffc7d3fab35d517722cb7c32a3c6",
+        "rows": 41316
+      },
+      {
+        "path": "BTC-EUR-2024-03.parquet",
+        "sha256": "1b8927e39a692e4f1ad9c916b7da0235940df3d5e304568fa77c70f9cbde8dab",
+        "rows": 44359
+      },
+      {
+        "path": "BTC-EUR-2024-04.parquet",
+        "sha256": "25d845d3e718036d1d58c868bca538f5bcaa61cfd95e98396234be5f218ee93e",
+        "rows": 42165
+      },
+      {
+        "path": "BTC-EUR-2024-05.parquet",
+        "sha256": "82cb131553e4111faef8a98d1ec6fd60a69cba38b82b4ba7973ffb5b04bd5cf4",
+        "rows": 43523
+      },
+      {
+        "path": "BTC-EUR-2024-06.parquet",
+        "sha256": "e6795a6c6f458ad4bf9aa6dbaecbbffe1aa16f2a1845ffea575b320a66fdb315",
+        "rows": 42117
+      },
+      {
+        "path": "BTC-EUR-2024-07.parquet",
+        "sha256": "8407395b579a095e4b828ac73cc873bbd4eea49c958e7285a9a45317002a6878",
+        "rows": 43865
+      },
+      {
+        "path": "BTC-EUR-2024-08.parquet",
+        "sha256": "d2f7d9e784a7f11c718a3662dddb33c65b3838a31200b0287fb40c0c0d1264c2",
+        "rows": 43921
+      },
+      {
+        "path": "BTC-EUR-2024-09.parquet",
+        "sha256": "5633af72d0a6dfb87de4350117a63be0a0c425c89bfa4a61687696d281218b95",
+        "rows": 42187
+      },
+      {
+        "path": "BTC-EUR-2024-10.parquet",
+        "sha256": "7c6075909451f2c711d5b2ed389da49ecfba9dbd3a78227612e6375ac7d34ca4",
+        "rows": 43997
+      },
+      {
+        "path": "BTC-EUR-2024-11.parquet",
+        "sha256": "1f85a558df772afe2b7dd8d340c55c95de3b385f4f799dda84196f41ef8b37ba",
+        "rows": 42981
+      },
+      {
+        "path": "BTC-EUR-2024-12.parquet",
+        "sha256": "3aec0e37b4820a21f2a2feea8bb9352d939f6f20d4c86e5424bd9212a889d7a6",
+        "rows": 44418
+      },
+      {
+        "path": "BTC-EUR-2025-01.parquet",
+        "sha256": "c92b87bd9f0ded83c20b685737116e33ac7df95af7f6cbeecba44e7c0b1009c9",
+        "rows": 44048
+      },
+      {
+        "path": "BTC-EUR-2025-02.parquet",
+        "sha256": "d889f6ba0af9f7c68f5e72ef1a6a714b4ba02b627ee48dac2b4f27f07404cc8c",
+        "rows": 40028
+      },
+      {
+        "path": "BTC-EUR-2025-03.parquet",
+        "sha256": "737c2d3ad156eb7b19cec1f30976224a2efd0b617b70198da2e354b727c40201",
+        "rows": 44256
+      },
+      {
+        "path": "BTC-EUR-2025-04.parquet",
+        "sha256": "e57d6f431355e47106cc3badf14fff8a438e38484e0d0dfd57113e325ae9c089",
+        "rows": 42752
+      },
+      {
+        "path": "BTC-EUR-2025-05.parquet",
+        "sha256": "67dc0745b7d07fe09fd4b9a67c71eb1d0c805182f78a68fe530f0b16c1fd65c7",
+        "rows": 44352
+      },
+      {
+        "path": "BTC-EUR-2025-06.parquet",
+        "sha256": "e20c86e10b3609722526d89c9a0ad117f6b3adb2de8f4d57514591c084794c68",
+        "rows": 42959
+      },
+      {
+        "path": "BTC-EUR-2025-07.parquet",
+        "sha256": "b1956968751f264e05178096b312db5e95dba12f3a97f8ffb9377dd4826bfc60",
+        "rows": 44386
+      },
+      {
+        "path": "BTC-EUR-2025-08.parquet",
+        "sha256": "a5dd2ce8849eb08f4ab7327895fe4a8791342ae5ea3d4622b9e5ac8fb799b719",
+        "rows": 44271
+      },
+      {
+        "path": "BTC-EUR-2025-09.parquet",
+        "sha256": "9e9d5860cb1ec9da1be7c1119d6083601a83161df320d538cac3554929c90aa9",
+        "rows": 42955
+      },
+      {
+        "path": "BTC-EUR-2025-10.parquet",
+        "sha256": "71ace465fb809fe0a41fa461f1d628d0b27cda2d7bbcfed632bb2924f96f319d",
+        "rows": 44444
+      },
+      {
+        "path": "BTC-EUR-2025-11.parquet",
+        "sha256": "5def126d6e29c013ef613aea4d1dc1e3f6aeac65523bf3446f535910897135ad",
+        "rows": 42589
+      },
+      {
+        "path": "BTC-EUR-2025-12.parquet",
+        "sha256": "285b0a46537e7d43e228224ebc994197685f85d0d3237c308f136640b8837e2d",
+        "rows": 44507
+      },
+      {
+        "path": "BTC-EUR-2026-01.parquet",
+        "sha256": "ee02764bc2eb00ea52d502bd5fb2a05274a82880448817216db7560c6505ef51",
+        "rows": 44454
+      },
+      {
+        "path": "BTC-EUR-2026-02.parquet",
+        "sha256": "edd889093b8483fdeb46df02b5b587811c4e7d49ffd490347bd061dd1e5f7969",
+        "rows": 40222
+      },
+      {
+        "path": "BTC-EUR-2026-03.parquet",
+        "sha256": "a9e0145f97c6606c762c46ee5bb956c2fc82b925ad809327a40c7d3cb05d86e4",
+        "rows": 44586
+      },
+      {
+        "path": "BTC-EUR-2026-04.parquet",
+        "sha256": "2e3ad9ca7ad1ab1d1b3c40a402242c74159240ec745a515bb79040f3e7bae105",
+        "rows": 43062
+      },
+      {
+        "path": "BTC-EUR-2026-05.parquet",
+        "sha256": "745e07c5680b8b2774441429b4e08d232c13cd6d6d6498aa34d081d7320557f4",
+        "rows": 44523
+      },
+      {
+        "path": "BTC-EUR-2026-06.parquet",
+        "sha256": "990e838da8cfcddc1df1c45ad4e661835a17399d52d4e4ed748f9e591ae995f1",
+        "rows": 43137
+      },
+      {
+        "path": "BTC-EUR-2026-07.parquet",
+        "sha256": "41306cdfb7af9ccc53a7b3a17ce126f6d96cd2aff456d3232cd203f1f3b97872",
+        "rows": 44444
+      },
+      {
+        "path": "ETH-EUR-2022-11.parquet",
+        "sha256": "2bbb28eb8d423e8041836a0cf5e700c317505cfa11c74ee83eeb0d972281f67d",
+        "rows": 38377
+      },
+      {
+        "path": "ETH-EUR-2022-12.parquet",
+        "sha256": "7307fee61c0156dce9e222fcc48a9a7d416ceda997c29cab39612222c0b962e7",
+        "rows": 36697
+      },
+      {
+        "path": "ETH-EUR-2023-01.parquet",
+        "sha256": "8e8325db621cf02b49dfe384847df8afd363ca21a04106ca4988849672a2e5db",
+        "rows": 39014
+      },
+      {
+        "path": "ETH-EUR-2023-02.parquet",
+        "sha256": "c0eb73a52064c465538be83b26b6bb10e4589a9a29f16f6b951b815fbee42f94",
+        "rows": 35617
+      },
+      {
+        "path": "ETH-EUR-2023-03.parquet",
+        "sha256": "3cb083d558a340a9635e4609bb1ce83ad184c967b6515d64a112ad776e215755",
+        "rows": 41122
+      },
+      {
+        "path": "ETH-EUR-2023-04.parquet",
+        "sha256": "aed85cc9d4ff9ed347ad60fd5d1d5d8c6d2927acaa1991e9b226c175d7f58dea",
+        "rows": 40140
+      },
+      {
+        "path": "ETH-EUR-2023-05.parquet",
+        "sha256": "8e400bbf0246aa5e6232e83a95719a7fb98c62ddb302a02340df8221177b20bf",
+        "rows": 41500
+      },
+      {
+        "path": "ETH-EUR-2023-06.parquet",
+        "sha256": "fc92f7b0989cd9719e94137b4c583c9d7759608b4f30a79122add1bb055f4b98",
+        "rows": 37571
+      },
+      {
+        "path": "ETH-EUR-2023-07.parquet",
+        "sha256": "e6ba54f4bce3b447744dd382f889b47301c7eb9e6d825746b26bc1fd4a2e2638",
+        "rows": 37965
+      },
+      {
+        "path": "ETH-EUR-2023-08.parquet",
+        "sha256": "0cb1e2991e3adee82c8c702bc2d824f3dc7d6945ee1670a4a37ef895fbe9f1a5",
+        "rows": 38655
+      },
+      {
+        "path": "ETH-EUR-2023-09.parquet",
+        "sha256": "a8aab73bf73cbfedd892b63fca64391cf5951b0e16e50028fe687ffbdb1a2a57",
+        "rows": 36911
+      },
+      {
+        "path": "ETH-EUR-2023-10.parquet",
+        "sha256": "725d4534d066c759a44d179a4f60c2ee652839a31d10fe8702abb0a3e7497431",
+        "rows": 38781
+      },
+      {
+        "path": "ETH-EUR-2023-11.parquet",
+        "sha256": "f40098e974fae94ad24b070dcf9a4609f6adc8a8f26a8e4e107800bd052f08dd",
+        "rows": 39277
+      },
+      {
+        "path": "ETH-EUR-2023-12.parquet",
+        "sha256": "8884b6c67a4f85297303da887699b09adb915973b9ddb21d0faab8c99f6de8c6",
+        "rows": 41649
+      },
+      {
+        "path": "ETH-EUR-2024-01.parquet",
+        "sha256": "cfa664ec3c1e6964dac6a02a1b55b58265e94143c391fbe53011968651b23284",
+        "rows": 40391
+      },
+      {
+        "path": "ETH-EUR-2024-02.parquet",
+        "sha256": "440fd488299e2403426eaff5e4415e07b2b92cb921195c1732f9307dfbeaf875",
+        "rows": 40163
+      },
+      {
+        "path": "ETH-EUR-2024-03.parquet",
+        "sha256": "2690644b670c1b8aca03721a11a156ff6d143b76accbf2dd6b9590045773383e",
+        "rows": 44163
+      },
+      {
+        "path": "ETH-EUR-2024-04.parquet",
+        "sha256": "f6d02fd6e362bf5e663fa7ffd527e303a1e895c91f843f944b5f27a6f9625baa",
+        "rows": 41939
+      },
+      {
+        "path": "ETH-EUR-2024-05.parquet",
+        "sha256": "6e123f6352d2da6e8532fd826aaebb60f62bed35a0e6abba0a27b97e94f6da98",
+        "rows": 43049
+      },
+      {
+        "path": "ETH-EUR-2024-06.parquet",
+        "sha256": "eb3b9f71bad4118dfe30333cc746f92d0e3d162b0e201d22fced8741c0a5e3d6",
+        "rows": 41014
+      },
+      {
+        "path": "ETH-EUR-2024-07.parquet",
+        "sha256": "203917270c14322c16e6651ba279b19049782190e4a5f9ed959446f1c689414f",
+        "rows": 42612
+      },
+      {
+        "path": "ETH-EUR-2024-08.parquet",
+        "sha256": "aac2f16b3a7a610d312c52d53b116bd164d1917fcd93c3cb86933f0d62246998",
+        "rows": 42691
+      },
+      {
+        "path": "ETH-EUR-2024-09.parquet",
+        "sha256": "91e8c44bebc23148624aecd486cb1fb79d0251e417d30785d6731d29019a755e",
+        "rows": 40501
+      },
+      {
+        "path": "ETH-EUR-2024-10.parquet",
+        "sha256": "b97f6ab7cc6bc5605c5ba93c2deed7eb1b02f6032cfdcc2c1bf962dc75bab784",
+        "rows": 42128
+      },
+      {
+        "path": "ETH-EUR-2024-11.parquet",
+        "sha256": "1810658d56f30021d1867a32ef8d4abdf1246d63d49952aab475d3f7c2f8dea2",
+        "rows": 42323
+      },
+      {
+        "path": "ETH-EUR-2024-12.parquet",
+        "sha256": "a9241d67e52dae1e1bdb3ecf21344eaf7be6ffdf83d6ed19258a0cc36e961e31",
+        "rows": 44021
+      },
+      {
+        "path": "ETH-EUR-2025-01.parquet",
+        "sha256": "3289a9fd40c2876728f2b753956b81b0f7e5a3e7e22176186f1ef714eedb70a2",
+        "rows": 43506
+      },
+      {
+        "path": "ETH-EUR-2025-02.parquet",
+        "sha256": "db76302a55b6b1d94f4493d6ad42a7799dc00968fccd9cb76caa4ac44a6e07d2",
+        "rows": 39196
+      },
+      {
+        "path": "ETH-EUR-2025-03.parquet",
+        "sha256": "261c5a4adedc67f8a5f1d7176bca88cf2763d0e05480790323befd5731effacf",
+        "rows": 43065
+      },
+      {
+        "path": "ETH-EUR-2025-04.parquet",
+        "sha256": "2a1dc9d4305ffc915c27c6ba20d0b3a957cdb1ce8f739652f5056ab771b709db",
+        "rows": 41385
+      },
+      {
+        "path": "ETH-EUR-2025-05.parquet",
+        "sha256": "7c3a46867a4a4880d0a0f9f886b52da5ce932ed32f75fee9e63c14789dfb2946",
+        "rows": 43449
+      },
+      {
+        "path": "ETH-EUR-2025-06.parquet",
+        "sha256": "a5cc5922220828849f51a47ab17f43bc08758dd6ec0de30399b57a260d232cd8",
+        "rows": 41975
+      },
+      {
+        "path": "ETH-EUR-2025-07.parquet",
+        "sha256": "db7df6712da6807ae83e308d3d1cefb5895292276e23f92469c48828e69970ba",
+        "rows": 43687
+      },
+      {
+        "path": "ETH-EUR-2025-08.parquet",
+        "sha256": "1179fd860b2f984cf7b554214c1dd58f26946c46332dca1af6ea89193ffc29a5",
+        "rows": 43822
+      },
+      {
+        "path": "ETH-EUR-2025-09.parquet",
+        "sha256": "88f5ed7af4d6e5bfedfc0d0c4ccc92bd5c18a39b048f91ec5c7d50cfff2bd4f2",
+        "rows": 41941
+      },
+      {
+        "path": "ETH-EUR-2025-10.parquet",
+        "sha256": "5f5c0aa0588db8f18a34171a3e04a800d35988a714907d8331283518dadeee1e",
+        "rows": 43471
+      },
+      {
+        "path": "ETH-EUR-2025-11.parquet",
+        "sha256": "11da85898e5f83d297fa35b6181bdf65972b98183ae15e0b07323397ce170df5",
+        "rows": 41747
+      },
+      {
+        "path": "ETH-EUR-2025-12.parquet",
+        "sha256": "573b4c9b4c3afb2efeead5727e2646b0cadb4b050b2b6b6a61b1f15b25bc32cd",
+        "rows": 43410
+      },
+      {
+        "path": "ETH-EUR-2026-01.parquet",
+        "sha256": "287980af529a9f116c1f4194bc101f5013af85014fd21679e2a6fa0efc22641d",
+        "rows": 43418
+      },
+      {
+        "path": "ETH-EUR-2026-02.parquet",
+        "sha256": "515fa19758f6f8f3b865b1ee66e7d6ff40b46afae39d018ed1b3f5edc34efda1",
+        "rows": 39483
+      },
+      {
+        "path": "ETH-EUR-2026-03.parquet",
+        "sha256": "7c72bdf328e0d28a71c170e19d9a28152d46081b760e4757e1927c98ead46ef4",
+        "rows": 43396
+      },
+      {
+        "path": "ETH-EUR-2026-04.parquet",
+        "sha256": "494a74fd2766e3a9554ccd420405078dfc1c320658d1b3afc030c06dbbb0280e",
+        "rows": 41718
+      },
+      {
+        "path": "ETH-EUR-2026-05.parquet",
+        "sha256": "f48e9b294f25de9737640d3ff6fe4b8e36db2738990c57f22e4f48716ee76cf7",
+        "rows": 42683
+      },
+      {
+        "path": "ETH-EUR-2026-06.parquet",
+        "sha256": "e8e626f67fb94382985482819a145286863ccfed92e28070b1196d5041899732",
+        "rows": 41688
+      },
+      {
+        "path": "ETH-EUR-2026-07.parquet",
+        "sha256": "9f676e5330007ae7db375ec394451b2cf7e5b8a8fe5e3dc4a40eabe1c4053fe2",
+        "rows": 42936
+      },
+      {
+        "path": "SOL-EUR-2022-11.parquet",
+        "sha256": "074d87ddf6c0a4b800f9a7c2bdd8ad1c47115900637a1d66869983d3aa63872d",
+        "rows": 26857
+      },
+      {
+        "path": "SOL-EUR-2022-12.parquet",
+        "sha256": "edb0700c8352de175848c0a3ab803b1c45230784c0569bd21095d25c14db6d20",
+        "rows": 17453
+      },
+      {
+        "path": "SOL-EUR-2023-01.parquet",
+        "sha256": "2e085eeb6ab78f519f910503d3a4ce5e37ed4834def76f481eabd19415da8025",
+        "rows": 27312
+      },
+      {
+        "path": "SOL-EUR-2023-02.parquet",
+        "sha256": "b2a421de96cf119ba1c04dbde2e97d5bffbe9a55702bb2042ba9115110a57329",
+        "rows": 20881
+      },
+      {
+        "path": "SOL-EUR-2023-03.parquet",
+        "sha256": "9db52c5e073492439005749f2e0073b6510a2c0f36c8f6384988a4297feb5aeb",
+        "rows": 22396
+      },
+      {
+        "path": "SOL-EUR-2023-04.parquet",
+        "sha256": "fcf5c57f0a0be6a68bd48146dd1f93d06afc47aec15c084f0d41e638f390d5e0",
+        "rows": 20496
+      },
+      {
+        "path": "SOL-EUR-2023-05.parquet",
+        "sha256": "08845da700344b6a99b64275db6ce24e9de2a9700fb9204384a004ff81790c4d",
+        "rows": 17453
+      },
+      {
+        "path": "SOL-EUR-2023-06.parquet",
+        "sha256": "50700c1a54945b98ce16bbea50bcd1fffe7d3e5678435fcc3b399e2124359f3b",
+        "rows": 20635
+      },
+      {
+        "path": "SOL-EUR-2023-07.parquet",
+        "sha256": "32d668f77c76a85c2d50f98b06a46d45d96acf58b69ea9c8ae144f54582fdda3",
+        "rows": 22221
+      },
+      {
+        "path": "SOL-EUR-2023-08.parquet",
+        "sha256": "ab2bfe2459b11d29be1cf0d20ab3e9a862a20f367f8940361064cd982d3897d8",
+        "rows": 21071
+      },
+      {
+        "path": "SOL-EUR-2023-09.parquet",
+        "sha256": "0e4b10b1ecddb0ec5796cd97bbee8d4806e0e9972f89489f039a1ff2817bce44",
+        "rows": 17241
+      },
+      {
+        "path": "SOL-EUR-2023-10.parquet",
+        "sha256": "20388f45652c5bdf62bc9ff630e247a388da16540a850a075704bff40cd08722",
+        "rows": 24323
+      },
+      {
+        "path": "SOL-EUR-2023-11.parquet",
+        "sha256": "63c07f692d2d50e72da58e17abd371847d727a635b1c979507d082198188386f",
+        "rows": 34342
+      },
+      {
+        "path": "SOL-EUR-2023-12.parquet",
+        "sha256": "f4f3ca96e6866642160e56188d4d4e353813aa0242f6617dedaa874ba2fef9fd",
+        "rows": 38319
+      },
+      {
+        "path": "SOL-EUR-2024-01.parquet",
+        "sha256": "b0eec07a2265dd542efc7c56c28d5f812d368fde17ec64c4861fd6ff11d2a96a",
+        "rows": 36156
+      },
+      {
+        "path": "SOL-EUR-2024-02.parquet",
+        "sha256": "f2d86fa0c313c3f73e3f57bd0261f97c29970a341e8d9df3e6936ca5f822bc40",
+        "rows": 31157
+      },
+      {
+        "path": "SOL-EUR-2024-03.parquet",
+        "sha256": "427f14d05d729222beacb0e7a96486bcd8a058b819f66cd7fead49dba3dd84c9",
+        "rows": 41008
+      },
+      {
+        "path": "SOL-EUR-2024-04.parquet",
+        "sha256": "d725d19296b2f727d81a7756e9e2367b58189b1656d6e2e3631ae74aaf029bea",
+        "rows": 36290
+      },
+      {
+        "path": "SOL-EUR-2024-05.parquet",
+        "sha256": "065a664c09def144804e5004d19ea9b30c46373c96585c58c85bb8cb13a5065e",
+        "rows": 36319
+      },
+      {
+        "path": "SOL-EUR-2024-06.parquet",
+        "sha256": "83f8beb635ad5902ea9c26c97a32aeeefd1ecee41aac6a6d593c847f189c6430",
+        "rows": 34852
+      },
+      {
+        "path": "SOL-EUR-2024-07.parquet",
+        "sha256": "cef7a9d2335c233118ec765fa71a21d5ff809ba29893f76ac400645c8faa6979",
+        "rows": 36778
+      },
+      {
+        "path": "SOL-EUR-2024-08.parquet",
+        "sha256": "e858a3b0327f42dd6b48c1de68be74e48bf8a2c0900cbadd160a2e45108a583b",
+        "rows": 36684
+      },
+      {
+        "path": "SOL-EUR-2024-09.parquet",
+        "sha256": "64a02d258f6970963fc9ed481c7630f846052dd0c8f7dfca3dc5aef43f6aa286",
+        "rows": 32347
+      },
+      {
+        "path": "SOL-EUR-2024-10.parquet",
+        "sha256": "1d6ab4be954783f96b9e8b1ac3413abddef1ccd22c8ce51b6f083f6448c3e04f",
+        "rows": 35177
+      },
+      {
+        "path": "SOL-EUR-2024-11.parquet",
+        "sha256": "bb65f6f2f34e66aff328210a303e5c0c556471f19165870bff72097926732961",
+        "rows": 40511
+      },
+      {
+        "path": "SOL-EUR-2024-12.parquet",
+        "sha256": "be177c2f837c03eb2164a99496dea2cfc0a2902a3986c2b9ccc6899ae3dba148",
+        "rows": 41573
+      },
+      {
+        "path": "SOL-EUR-2025-01.parquet",
+        "sha256": "cad3f8cf057681d9404377094c7604941b4d3fba6d65bfd5d5ff3e329d18685f",
+        "rows": 41266
+      },
+      {
+        "path": "SOL-EUR-2025-02.parquet",
+        "sha256": "5fb8128a5a81e9e4089f520307d6faabfeeacc051b8a08776472a93c60303a45",
+        "rows": 36541
+      },
+      {
+        "path": "SOL-EUR-2025-03.parquet",
+        "sha256": "96368223c940c4f3c364108ad44fab06ac9aba3cfcef923884c81eab7b9769fb",
+        "rows": 39040
+      },
+      {
+        "path": "SOL-EUR-2025-04.parquet",
+        "sha256": "4c90029b436c8d831d2043a864328356b664b85f42e25fde699176fb612367b4",
+        "rows": 37633
+      },
+      {
+        "path": "SOL-EUR-2025-05.parquet",
+        "sha256": "7e8417fc0648f37112e953adce658d391317782294fe5e49bfd3f0a1b91a9289",
+        "rows": 39913
+      },
+      {
+        "path": "SOL-EUR-2025-06.parquet",
+        "sha256": "efe3378997cc29d75d43aee524183a3c23fe1cea241df5a03b6c55f5b63988c0",
+        "rows": 37969
+      },
+      {
+        "path": "SOL-EUR-2025-07.parquet",
+        "sha256": "bb96394fd51a741f6fe01e43d36bed3525e1db4be2926add72bc37b765787624",
+        "rows": 41386
+      },
+      {
+        "path": "SOL-EUR-2025-08.parquet",
+        "sha256": "5f1c0ae05110f6baff82a37627e570a8aa2919573388588b3d8df487f031bded",
+        "rows": 42216
+      },
+      {
+        "path": "SOL-EUR-2025-09.parquet",
+        "sha256": "c8fe69f24e08c4833ffb415994abafbcc28d49452e8ae9d206bb6fb449d2aabf",
+        "rows": 41155
+      },
+      {
+        "path": "SOL-EUR-2025-10.parquet",
+        "sha256": "8e687d9111888184b9f1284bdf17dd4935d684444253bc1c406ecd721fed5aba",
+        "rows": 42667
+      },
+      {
+        "path": "SOL-EUR-2025-11.parquet",
+        "sha256": "80738d9423167add22db1865592153d56698cb937026b28cf3eb20d30bd243cd",
+        "rows": 41197
+      },
+      {
+        "path": "SOL-EUR-2025-12.parquet",
+        "sha256": "d654709ad8c782452c152ffe0fd9b16e2d14971db6a66fe1aa8aa7f50e0c9c3b",
+        "rows": 43130
+      },
+      {
+        "path": "SOL-EUR-2026-01.parquet",
+        "sha256": "42705560e9ea0b92bf7842b3be9932551c038098da8f42b295a470648b6477f4",
+        "rows": 43197
+      },
+      {
+        "path": "SOL-EUR-2026-02.parquet",
+        "sha256": "82ececc9256393d355cd224ec17109e7f234a44db35f0e05388e6d15fcf25657",
+        "rows": 39366
+      },
+      {
+        "path": "SOL-EUR-2026-03.parquet",
+        "sha256": "0a236fb224ad7f3519ca2a7b85de0dd8cade62a80cba5f22361dad9237095229",
+        "rows": 43421
+      },
+      {
+        "path": "SOL-EUR-2026-04.parquet",
+        "sha256": "1d4c8bdff55271bb626ad2a4827f9115eba7b93cc299fc26d0b2e0d69ec3d749",
+        "rows": 41503
+      },
+      {
+        "path": "SOL-EUR-2026-05.parquet",
+        "sha256": "e9b81016e8c681122eb004add3e1204d8d4c847864ff67c43124e1f3093bd5c6",
+        "rows": 42625
+      },
+      {
+        "path": "SOL-EUR-2026-06.parquet",
+        "sha256": "0d583166f476e1da6f84b4a4771062144b33ea46295a086dd4cf35fb1d6d61bd",
+        "rows": 41768
+      },
+      {
+        "path": "SOL-EUR-2026-07.parquet",
+        "sha256": "f5a1fd5c85618389cc435c64830b30d9a17ad75724a26b45a473345b51d9dac9",
+        "rows": 43397
+      },
+      {
+        "path": "XRP-EUR-2022-11.parquet",
+        "sha256": "b2177d759567626fad906d9b82a6a383f4443e71fff0bf301424166aacbf9abd",
+        "rows": 31821
+      },
+      {
+        "path": "XRP-EUR-2022-12.parquet",
+        "sha256": "165cf119af5e7c6ce5a27e678001485efa64d1a168c721acaeefda72eeebca1e",
+        "rows": 27987
+      },
+      {
+        "path": "XRP-EUR-2023-01.parquet",
+        "sha256": "0b93e06daab6ad614712c71327f580dc1eabc7e17ffc48c3a26d2522549d0ce9",
+        "rows": 29792
+      },
+      {
+        "path": "XRP-EUR-2023-02.parquet",
+        "sha256": "918c258da2469cd621e86b9bf092fac3c71cbfc52dcb6a8577c5ffea5793f5b9",
+        "rows": 25322
+      },
+      {
+        "path": "XRP-EUR-2023-03.parquet",
+        "sha256": "f736207fa5eb030efbf9f44a75bb7ee67bc60407f6b53dea860d5a88b0b7f56d",
+        "rows": 32911
+      },
+      {
+        "path": "XRP-EUR-2023-04.parquet",
+        "sha256": "1640bc0234229f61eb7540487b2b1fa03d7ada1ad26d1d82fe13a50a69021b2f",
+        "rows": 30085
+      },
+      {
+        "path": "XRP-EUR-2023-05.parquet",
+        "sha256": "4043fb76b9e98d5d1e2034f08b6615033c18698ca8308d46ecf467381f7946a8",
+        "rows": 28790
+      },
+      {
+        "path": "XRP-EUR-2023-06.parquet",
+        "sha256": "0bcdb0d095c802d844310ab32f8a2e6ee09994e945348f43f56826e86b63d27d",
+        "rows": 29309
+      },
+      {
+        "path": "XRP-EUR-2023-07.parquet",
+        "sha256": "3851c9d3054f44443a7689474327a01c1eedf16b78c7952eeeb0d30f4a23c087",
+        "rows": 31799
+      },
+      {
+        "path": "XRP-EUR-2023-08.parquet",
+        "sha256": "d8949ed28fc0556870f79e7a7d8dfbea602a97f7e74f4f336bfa03d600d03ffb",
+        "rows": 30815
+      },
+      {
+        "path": "XRP-EUR-2023-09.parquet",
+        "sha256": "c22b08e5624c824f36ad7c6812b01ebcb7c27f2696afa6dc095e24acce910a8b",
+        "rows": 27629
+      },
+      {
+        "path": "XRP-EUR-2023-10.parquet",
+        "sha256": "3351d436054007afba738ef101c4c1957d7f5f8cca79ae00f7122f7bb6cf9454",
+        "rows": 29306
+      },
+      {
+        "path": "XRP-EUR-2023-11.parquet",
+        "sha256": "c0288908d8fa1e95865a8481807f4cb44982a90423483e47e71e96cc88d07a00",
+        "rows": 32718
+      },
+      {
+        "path": "XRP-EUR-2023-12.parquet",
+        "sha256": "c52c14907e243aa6b6e6c6d44dc5da47a1fcecb9467ff9dff20439c10d1e7b1d",
+        "rows": 34883
+      },
+      {
+        "path": "XRP-EUR-2024-01.parquet",
+        "sha256": "fc2d3f5002c921e2ec39527cb93c8b522558203d78a18b7329e27e7040ab3059",
+        "rows": 32541
+      },
+      {
+        "path": "XRP-EUR-2024-02.parquet",
+        "sha256": "47b6ea29cf8e0d0230c026de289676ddae663630e564f4bdd206114b453d1fc4",
+        "rows": 31243
+      },
+      {
+        "path": "XRP-EUR-2024-03.parquet",
+        "sha256": "66ba89a2eb9d47ee095c59feaaac583fc9fcaf35f19c242c0ae45f9c7a47b890",
+        "rows": 37515
+      },
+      {
+        "path": "XRP-EUR-2024-04.parquet",
+        "sha256": "03fe4f48fe9a69f1341353778cd739b1be20f1a1f5a7d5bafd52d9b43d22a22b",
+        "rows": 33513
+      },
+      {
+        "path": "XRP-EUR-2024-05.parquet",
+        "sha256": "0ddb1020ab42dc7d7b05416849f170e5e345bd0f2b18df9e18e808d8b866ba90",
+        "rows": 33074
+      },
+      {
+        "path": "XRP-EUR-2024-06.parquet",
+        "sha256": "a27448c4e60dc466ce6cb95d6223f94db4da6156f501f52b39045a00aaf6ced1",
+        "rows": 31781
+      },
+      {
+        "path": "XRP-EUR-2024-07.parquet",
+        "sha256": "410c57e8c8dbfc74b48b205d84dfdd1d76522803cda8404898900135e0ac1cb8",
+        "rows": 35530
+      },
+      {
+        "path": "XRP-EUR-2024-08.parquet",
+        "sha256": "bcea8788b58478f6f3e91efa360b89779c7d4f0732c52ea5c570babc0bcbc4bb",
+        "rows": 34885
+      },
+      {
+        "path": "XRP-EUR-2024-09.parquet",
+        "sha256": "3f3567a0eeeb133687b4cb6c00799d73b0e15073875a4dc9f8a260ca042da4b7",
+        "rows": 32372
+      },
+      {
+        "path": "XRP-EUR-2024-10.parquet",
+        "sha256": "6b78bfb7b756918a40c012fa9c5040aea0e7187b25340b07f95523e4f7fa39ba",
+        "rows": 33080
+      },
+      {
+        "path": "XRP-EUR-2024-11.parquet",
+        "sha256": "47546eb22aa99f69bfc6a0480f470df861fa3e1e9bc042008ecf788629be6667",
+        "rows": 39327
+      },
+      {
+        "path": "XRP-EUR-2024-12.parquet",
+        "sha256": "a1bb00502e7c8442eba4c5c8b60f73af34d9597e40070593b65a48d0fa6f0038",
+        "rows": 42258
+      },
+      {
+        "path": "XRP-EUR-2025-01.parquet",
+        "sha256": "81562b18237d35c5d1d1bcc97ecbaf16dbcaa6e5b69e99e0333d6e6a92227387",
+        "rows": 41671
+      },
+      {
+        "path": "XRP-EUR-2025-02.parquet",
+        "sha256": "b98f611c008184888f3c051ef4b13c4605a7c707fded1263a51451b0cd211975",
+        "rows": 36545
+      },
+      {
+        "path": "XRP-EUR-2025-03.parquet",
+        "sha256": "a13c7b08b01d539f10fc704a6f2f6d954de0f422cfa6f2230c9a66044500dd0b",
+        "rows": 39568
+      },
+      {
+        "path": "XRP-EUR-2025-04.parquet",
+        "sha256": "7a5b4a06b9b081cee75bde39804e24e728cadab393a02f6d263a63df6eb49d4a",
+        "rows": 36742
+      },
+      {
+        "path": "XRP-EUR-2025-05.parquet",
+        "sha256": "8ed7a8d9dc4e2c50ce2f8ece544ebec52f1635817751ea52aa28ce1c232a986d",
+        "rows": 38077
+      },
+      {
+        "path": "XRP-EUR-2025-06.parquet",
+        "sha256": "2f7a5b2b57764de0a3f3876a194a77f856bf232ad34ac3f60090cd3094f28a20",
+        "rows": 35920
+      },
+      {
+        "path": "XRP-EUR-2025-07.parquet",
+        "sha256": "6c4c95f66e0da742265ffb602743159927103ae5263be47e131543e2fbfbb1dc",
+        "rows": 40133
+      },
+      {
+        "path": "XRP-EUR-2025-08.parquet",
+        "sha256": "c6155a4e229be19434c81b839972578f66ddee878abff4419cca0f7c786cd140",
+        "rows": 38710
+      },
+      {
+        "path": "XRP-EUR-2025-09.parquet",
+        "sha256": "a39f169989d8ab392e16660e6c7c7dd2a95d47a1fa95a1d7e0f04ec009cd5be9",
+        "rows": 36083
+      },
+      {
+        "path": "XRP-EUR-2025-10.parquet",
+        "sha256": "fdad610ce9d5c9cf18f8d53b78b90cbc11504c0f82588e0d789000f83bbb9baf",
+        "rows": 38854
+      },
+      {
+        "path": "XRP-EUR-2025-11.parquet",
+        "sha256": "e3b0ed484d6507ecb391426a36c66a3ef71fe8614917606160b2de9e924d5c2c",
+        "rows": 37537
+      },
+      {
+        "path": "XRP-EUR-2025-12.parquet",
+        "sha256": "6ce4ba29b60667b0845bcfa45bc2cc51d378a8eae0c23d64b27140fb8cda7d75",
+        "rows": 38460
+      },
+      {
+        "path": "XRP-EUR-2026-01.parquet",
+        "sha256": "2bef8fed4ac82b863872cef193fb236d754fcfea1d5bccae6197ab5770f71f8c",
+        "rows": 37771
+      },
+      {
+        "path": "XRP-EUR-2026-02.parquet",
+        "sha256": "a2c06264dbd50f4f9cabc651852d02bd0717386f8ba4ac6a4e307a1d23715b46",
+        "rows": 35435
+      },
+      {
+        "path": "XRP-EUR-2026-03.parquet",
+        "sha256": "3377344dc400ce90ed2483083642cea578bc74bf27f42eb4cfa6a48e5391cb8b",
+        "rows": 36742
+      },
+      {
+        "path": "XRP-EUR-2026-04.parquet",
+        "sha256": "e93ac1e015d64fc9cc9a0fcbb988807558b2a264d0c6d06d783c6e814ff310f3",
+        "rows": 33019
+      },
+      {
+        "path": "XRP-EUR-2026-05.parquet",
+        "sha256": "342d826a351d699a0e1a9a320451835822cc4d5d7a2095f7137b897cfc6a0708",
+        "rows": 35245
+      },
+      {
+        "path": "XRP-EUR-2026-06.parquet",
+        "sha256": "606eec49e1e11beac877ef0cdd996730e98368a0d6dc142918dcce8965fc1df4",
+        "rows": 36274
+      },
+      {
+        "path": "XRP-EUR-2026-07.parquet",
+        "sha256": "8b02dbb7a1416a157442a724bcfab65a4993eee8e54dc7c999f28e466899eda8",
+        "rows": 35627
+      }
+    ],
+    "synthetic": false,
+    "accepted": true,
+    "notes": [
+      "No-candle intervals are unknown/no-trade; they are never executable synthetic candles.",
+      "Owner explicitly accepted large unknown data gaps",
+      "Separate Kraken comparison data; never a Bitvavo gap repair. Default execution costs/rules remain Bitvavo research assumptions, not calibrated Kraken fills."
+    ]
+  },
+  "owner_decision": "Owner explicitly accepted these documented Kraken gaps for research-only comparison on 4 November 2026.",
+  "campaign": {
+    "final_test": null,
+    "objective": "sharpe_daily_v1",
+    "target_cagr": 0.15,
+    "id": "9a9e4cb9d8ea68e845705a5cccdb29e05b8c54c0e07f00ce986f3383008aed51",
+    "dataset": "3a1a4d25916723b1604533a1227a7372363131739d132b38834aa4e603a243f1",
+    "development_start": 1667260800000,
+    "development_end": 1761955200000,
+    "validation_start": 1761955200000,
+    "validation_end": 1785542400000
+  }
+}

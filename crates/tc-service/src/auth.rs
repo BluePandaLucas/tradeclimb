@@ -119,21 +119,23 @@ pub fn issue_agent(store: &Store, name: &str, output: &Path, days: u32) -> Resul
     )
 }
 pub fn revoke_agent(store: &Store, id: &str) -> Result<()> {
+    let mut db = store.db()?;
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
     ensure!(
-        store
-            .db()?
-            .execute("UPDATE agent_credentials SET revoked=1 WHERE id=?1", [id])?
-            == 1,
+        tx.execute("UPDATE agent_credentials SET revoked=1 WHERE id=?1", [id])? == 1,
         "unknown agent credential"
     );
-    let db = store.db()?;
-    db.execute("UPDATE jobs SET data=json_set(data,'$.state','cancelled','$.updated_at',?1) WHERE id IN (SELECT id FROM objects WHERE kind='job_agent' AND json_extract(data,'$.id')=?2) AND json_extract(data,'$.state') IN ('queued','preparing','running')",params![now(),id])?;
-    db.execute("UPDATE objects SET data=json_set(data,'$.state','cancelled') WHERE kind='tuning' AND json_extract(data,'$.agent')=?1 AND json_extract(data,'$.state')='running'",[id])?;
-    store.put(
-        "audit",
-        &uuid::Uuid::new_v4().to_string(),
-        &json!({"action":"revoke_agent","id":id,"time":now()}),
-    )
+    tx.execute("UPDATE jobs SET data=json_set(data,'$.state','cancelled','$.updated_at',?1) WHERE id IN (SELECT id FROM objects WHERE kind='job_agent' AND json_extract(data,'$.id')=?2) AND json_extract(data,'$.state') IN ('queued','preparing','running')",params![now(),id])?;
+    tx.execute("UPDATE objects SET data=json_set(data,'$.state','cancelled') WHERE kind='tuning' AND json_extract(data,'$.agent')=?1 AND json_extract(data,'$.state')='running'",[id])?;
+    tx.execute(
+        "INSERT INTO objects VALUES('audit',?1,?2)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            serde_json::to_string(&json!({"action":"revoke_agent","id":id,"time":now()}))?
+        ],
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 pub fn status(store: &Store) -> Result<Value> {
     let db = store.db()?;
@@ -316,17 +318,77 @@ pub(crate) fn submit(store: &Store, mut request: Submission, agent: Option<&str>
         request.idempotency_key =
             format!("agent:{id}:{}", digest(request.idempotency_key.as_bytes()));
     }
-    let job = store.submit(request)?;
-    if let Some(id) = agent {
-        store.put("job_agent", &job.id, &json!({"id":id}))?;
-    }
-    Ok(job)
+    store.submit_scoped(request, agent)
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    #[test]
+    fn revocation_and_concurrent_submissions_leave_no_active_or_unowned_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let credential = issue_agent(&store, "race", &dir.path().join("agent.key"), 1).unwrap();
+        let agent = credential["id"].as_str().unwrap().to_string();
+        let dataset = tc_data::snapshot(&store.root, vec![], 0, 30 * MINUTE, true, true).unwrap();
+        let c = store.campaign(&dataset.id).unwrap();
+        let s = store
+            .register(
+                StrategySpec {
+                    parameters: Default::default(),
+                    name: "Cash".into(),
+                    description: "fixture".into(),
+                    kind: StrategyKind::Cash,
+                    markets: vec!["BTC-EUR".into()],
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        let request = Submission {
+            strategy: s.id,
+            campaign: c.id,
+            period: Period::Development,
+            idempotency_key: "initial".into(),
+            slippage_bps: None,
+        };
+        submit(&store, request.clone(), Some(&agent)).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(10));
+        let mut threads = vec![];
+        for i in 0..8 {
+            let (store, agent, barrier, mut request) = (
+                store.clone(),
+                agent.clone(),
+                barrier.clone(),
+                request.clone(),
+            );
+            request.idempotency_key = format!("race-{i}");
+            threads.push(std::thread::spawn(move || {
+                barrier.wait();
+                let _ = submit(&store, request, Some(&agent));
+            }));
+        }
+        let (other, agent_id, ready) = (store.clone(), agent.clone(), barrier.clone());
+        let revoked = std::thread::spawn(move || {
+            ready.wait();
+            revoke_agent(&other, &agent_id).unwrap();
+        });
+        barrier.wait();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        revoked.join().unwrap();
+        for job in store.jobs().unwrap() {
+            assert_eq!(job.state, "cancelled");
+            assert_eq!(
+                store.get::<Value>("job_agent", &job.id).unwrap()["id"],
+                agent
+            );
+        }
+        assert!(submit(&store, request, Some(&agent)).is_err());
+        assert_eq!(store.ledger().unwrap()["used"], 0);
+    }
     #[test]
     fn credentials_are_private_scoped_revocable_and_never_listed() {
         let temp = tempfile::tempdir().unwrap();
