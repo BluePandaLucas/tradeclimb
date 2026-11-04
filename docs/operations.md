@@ -37,6 +37,8 @@ target/release/tc --data-dir var/demo demo
 TC_DATA_DIR=var/demo ./scripts/start
 ```
 
+Strategy evaluations open from any cell in a row; the strategy-name button also supports keyboard navigation. A tuning experiment appears as a compact progress/best-CAGR summary. Individual trials are hidden until **Show individual tuning trials** is checked. The evaluation list shows ten rows per page, and the selected chart remains independent of arriving trials. **Stop tuning** cancels further trials; starting another experiment is disabled while tuning is pending/running.
+
 ## Import real Bitvavo data
 
 ```bash

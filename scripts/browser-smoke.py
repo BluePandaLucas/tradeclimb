@@ -81,7 +81,42 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert not page.get_by_label('BTC reference',exact=True).is_checked()
    page.evaluate('window.scrollTo(0,0)')
    page.screenshot(path='/tmp/tradeclimb-desktop.png',full_page=True)
+   # A tuning experiment stays one summary; its many trials are opt-in.
+   evaluation_rows=page.locator('.evaluations tbody tr')
+   baseline=evaluation_rows.count()
+   original=page.locator('.run-detail .panel-heading code').inner_text()
+   page.evaluate('window._chartNode=document.querySelector(".run-detail svg")')
+   tune_requests=[]
+   page.on('request',lambda request:tune_requests.append(request.url) if request.method=='POST' and request.url.endswith('/api/tune') else None)
+   tune=page.get_by_role('button',name='Tune parameters · 20 trials',exact=True)
+   tune.evaluate('el => { el.click(); el.click(); }')
+   page.wait_for_function('async () => { const d=await (await fetch("/api/overview")).json(); return d.tuning.some(t => (t.jobs || []).length >= 11); }',timeout=60000)
+   page.get_by_label('Show individual tuning trials').wait_for()
+   assert len(tune_requests)==1,'duplicate tuning request'
+   assert evaluation_rows.count()==baseline,'tuning flooded ordinary evaluation rows'
+   assert page.locator('.run-detail .panel-heading code').inner_text()==original
+   assert page.evaluate('window._chartNode === document.querySelector(".run-detail svg")'),'completed chart rebuilt during tuning'
+   page.get_by_label('Show individual tuning trials').check()
+   page.wait_for_function('document.querySelectorAll(".evaluations tbody tr").length === 10')
+   page.get_by_role('button',name='Next runs',exact=True).click()
+   assert 'Page 2 of' in page.locator('.evaluation-pagination').inner_text()
+   row=evaluation_rows.last
+   selected_id=row.get_attribute('data-run-id')
+   row.locator('td').nth(3).click()
+   page.wait_for_function('(id) => document.querySelector(".run-detail .panel-heading code")?.textContent === id.slice(0,8)',arg=selected_id)
+   # The name remains a keyboard-accessible button as well as row clicks.
+   row.get_by_role('button').first.focus()
+   page.keyboard.press('Enter')
+   stop=page.get_by_role('button',name='Stop tuning',exact=True)
+   if stop.count():
+    stop.first.click()
+   page.get_by_label('Show individual tuning trials').uncheck()
+   assert evaluation_rows.count()==baseline
    page.get_by_role('button',name='Overview',exact=True).click()
+   cash=page.locator('.evaluation-row').filter(has=page.get_by_role('button',name='Cash reference',exact=True)).first
+   cash_id=cash.get_attribute('data-run-id')
+   cash.locator('td').nth(3).click()
+   page.wait_for_function('(id) => document.querySelector(".run-detail .panel-heading code")?.textContent === id.slice(0,8)',arg=cash_id)
    assert page.locator('.stats').count()==1
    assert page.locator('.controls').count()==0
    page.get_by_role('button',name='Backtests',exact=True).click()
@@ -167,7 +202,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    service.wait(timeout=8)
    assert service.returncode==0
    browser.close()
-   print('PASS: sidebar, theme transitions/reduced motion, tab scoping, leaderboard, selection persistence, paper controls, charts, mobile layout, and Ctrl+C; no page errors')
+   print('PASS: clickable rows, grouped tuning trials, pagination, duplicate tuning protection, stable charts, sidebar, themes, leaderboard, paper controls, mobile layout, and Ctrl+C; no page errors')
  finally:
   service.send_signal(signal.SIGINT)
   try:service.wait(timeout=30)

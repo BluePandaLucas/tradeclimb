@@ -62,7 +62,7 @@ For a grid or seeded random search over an external strategy's integer parameter
 }
 ```
 
-The immutable strategy specification is provided to the executable in `TC_STRATEGY_SPEC`; parse its `parameters` object before entering `tc_sdk::serve`. `tc_sdk::propose` provides the same bounded grid/random candidate generation for external agents. The UI exposes a basic built-in tuning action; custom spaces use the API. Tuning state and child job IDs appear in the overview. A service restart leaves unfinished historical runs interrupted; tuning is not automatically resumed.
+The immutable strategy specification is provided to the executable in `TC_STRATEGY_SPEC`; parse its `parameters` object before entering `tc_sdk::serve`. `tc_sdk::propose` provides the same bounded grid/random candidate generation for external agents. The UI exposes a basic built-in tuning action; custom spaces use the API. Tuning state and child job IDs appear in the overview. Tuning records retain `strategy`, `campaign`, `trials`, and `jobs` across progress and terminal states; child job membership is published on submission so the UI can group trials before they finish. A service restart leaves unfinished historical runs interrupted; tuning is not automatically resumed.
 
 ## SDK contract
 

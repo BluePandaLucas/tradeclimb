@@ -408,19 +408,27 @@ async fn tune(State(app): State<Arc<App>>, Json(input): Json<Tune>) -> Api<Value
     store.put(
         "tuning",
         &id,
-        &json!({"id":id,"state":"running","seed":input.seed,"trials":input.trials}),
+        &json!({"id":id,"state":"running","seed":input.seed,"trials":input.trials,"strategy":input.strategy,"campaign":input.campaign,"jobs":[]}),
     )?;
     tokio::spawn(async move {
         let result = run_tuning(&store, &input, &parent, &id).await;
         if let Err(e) = result {
-            let _ = store.put(
-                "tuning",
-                &id,
-                &json!({"id":id,"state":"failed","error":e.to_string()}),
-            );
+            let _ = update_tuning(&store, &id, json!({"state":"failed","error":e.to_string()}));
         }
     });
     Ok(Json(json!({"id":return_id,"state":"running"})))
+}
+// Preserve trial membership and experiment context through every state change.
+fn update_tuning(store: &Store, id: &str, changes: Value) -> Result<()> {
+    let mut value: Value = store.get("tuning", id)?;
+    let cancelled = value["state"] == "cancelled";
+    if let (Some(target), Some(changes)) = (value.as_object_mut(), changes.as_object()) {
+        target.extend(changes.clone());
+    }
+    if cancelled {
+        value["state"] = json!("cancelled");
+    }
+    store.put("tuning", id, &value)
 }
 async fn cancel_tuning(
     State(app): State<Arc<App>>,
@@ -494,6 +502,8 @@ async fn run_tuning(
             slippage_bps: None,
         })?;
         jobs.push(job.id.clone());
+        // Publish membership immediately, rather than waiting for completion.
+        update_tuning(store, id, json!({"jobs":jobs}))?;
         loop {
             tokio::time::sleep(Duration::from_millis(250)).await;
             if store.get::<Value>("tuning", id)?["state"] == "cancelled" {
@@ -523,9 +533,17 @@ async fn run_tuning(
                 break;
             }
         }
-        store.put("tuning",id,&json!({"id":id,"state":"running","seed":input.seed,"jobs":jobs,"completed":trial+1,"best":if best.is_finite(){Some(best)}else{None},"stalled":stale}))?;
+        update_tuning(
+            store,
+            id,
+            json!({"state":"running","jobs":jobs,"completed":trial+1,"best":if best.is_finite(){Some(best)}else{None},"stalled":stale}),
+        )?;
     }
-    store.put("tuning",id,&json!({"id":id,"state":"completed","jobs":jobs,"best":if best.is_finite(){Some(best)}else{None},"stop_reason":if stale>=20{"stalled"}else{"budget_exhausted"}}))?;
+    update_tuning(
+        store,
+        id,
+        json!({"state":"completed","jobs":jobs,"best":if best.is_finite(){Some(best)}else{None},"stop_reason":if stale>=20{"stalled"}else{"budget_exhausted"}}),
+    )?;
     Ok(())
 }
 #[cfg(test)]
@@ -533,6 +551,20 @@ async fn run_tuning(
 mod tests {
     use super::*;
     use tower::ServiceExt;
+    #[test]
+    fn tuning_updates_keep_trial_membership_and_context() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path()).unwrap();
+        store.put("tuning","t",&json!({"id":"t","state":"running","strategy":"parent","campaign":"c","trials":20,"jobs":[]})).unwrap();
+        update_tuning(&store, "t", json!({"jobs":["trial"],"completed":1})).unwrap();
+        update_tuning(&store, "t", json!({"state":"cancelled"})).unwrap();
+        update_tuning(&store, "t", json!({"state":"completed","best":0.2})).unwrap();
+        let t: Value = store.get("tuning", "t").unwrap();
+        assert_eq!(t["jobs"], json!(["trial"]));
+        assert_eq!(t["strategy"], "parent");
+        assert_eq!(t["trials"], 20);
+        assert_eq!(t["state"], "cancelled");
+    }
     #[tokio::test]
     async fn open_browser_stream_ends_when_shutdown_is_requested() {
         let directory = tempfile::tempdir().unwrap();

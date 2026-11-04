@@ -1,7 +1,9 @@
 //! Rust browser UI. Accounting and strategy execution stay in native workers.
+mod evaluations;
 mod leaderboard;
 mod paper;
 mod theme;
+use evaluations::{Evaluations, RunDetail};
 use gloo_net::http::Request;
 use leaderboard::Leaderboard;
 use leptos::{prelude::*, task::spawn_local};
@@ -38,36 +40,6 @@ fn date(v: &Value) -> String {
                 .collect()
         })
         .unwrap_or_default()
-}
-fn hydrate_selected(
-    mut data: Value,
-    snapshot: RwSignal<Value>,
-    selected: RwSignal<String>,
-    days: RwSignal<i64>,
-) {
-    let id = selected.get_untracked();
-    let window = days.get_untracked();
-    if id.is_empty() {
-        snapshot.set(data);
-        return;
-    }
-    spawn_local(async move {
-        if let Ok(response) = Request::get(&format!("/api/jobs/{id}?days={window}"))
-            .send()
-            .await
-            && let Ok(job) = response.json::<Value>().await
-            && let Some(jobs) = data["jobs"].as_array_mut()
-        {
-            if let Some(entry) = jobs.iter_mut().find(|j| text(j, "id") == id) {
-                *entry = job;
-            } else {
-                jobs.push(job);
-            }
-        }
-        if selected.get_untracked() == id && days.get_untracked() == window {
-            snapshot.set(data);
-        }
-    });
 }
 fn action(path: String, body: Value, status: RwSignal<String>) {
     spawn_local(async move {
@@ -120,6 +92,8 @@ fn App() -> impl IntoView {
     let online = RwSignal::new(false);
     let tab = RwSignal::new("Overview".to_string());
     let selected = RwSignal::new(String::new());
+    let run_detail = RwSignal::new(Value::Null);
+    let tuning_pending = RwSignal::new(false);
     let selected_strategy = RwSignal::new(String::new());
     let selected_campaign = RwSignal::new(String::new());
     let paper_pending = RwSignal::new(Vec::<String>::new());
@@ -149,18 +123,62 @@ fn App() -> impl IntoView {
             selected_campaign.set(text(first, "id"));
         }
     });
+    // Selection detail is independent of the streamed list. Completed charts
+    // are fetched once per run/window, and stale requests cannot replace it.
+    let detail_key = Memo::new(move |_| {
+        let id = selected.get();
+        let job = snapshot.with(|data| {
+            items(data, "jobs")
+                .into_iter()
+                .find(|j| text(j, "id") == id)
+        });
+        (
+            id,
+            chart_days.get(),
+            job.as_ref()
+                .map(|j| (text(j, "state"), j["updated_at"].as_i64().unwrap_or(0))),
+        )
+    });
     Effect::new(move || {
-        let _ = selected.get();
-        let _ = chart_days.get();
-        hydrate_selected(snapshot.get_untracked(), snapshot, selected, chart_days);
+        let key = detail_key.get();
+        if key.0.is_empty() {
+            run_detail.set(Value::Null);
+            return;
+        }
+        if run_detail.with_untracked(|job| text(job, "id") != key.0) {
+            run_detail.set(Value::Null);
+        }
+        spawn_local(async move {
+            if let Ok(response) = Request::get(&format!("/api/jobs/{}?days={}", key.0, key.1))
+                .send()
+                .await
+                && response.ok()
+                && let Ok(job) = response.json::<Value>().await
+                && detail_key.get_untracked() == key
+            {
+                run_detail.update(|current| {
+                    if *current != job {
+                        *current = job;
+                    }
+                });
+            }
+        });
     });
     Effect::new(move || {
         if tab.get() == "Overview"
             && selected.get().is_empty()
             && let Some(id) = snapshot.with(|data| {
+                let trials = items(data, "tuning")
+                    .into_iter()
+                    .flat_map(|t| items(&t, "jobs"))
+                    .collect::<Vec<_>>();
                 items(data, "jobs")
                     .into_iter()
-                    .find(|job| job["period"] == "development" && job["state"] == "completed")
+                    .find(|job| {
+                        job["period"] == "development"
+                            && job["state"] == "completed"
+                            && !trials.contains(&job["id"])
+                    })
                     .map(|job| text(&job, "id"))
             })
         {
@@ -171,7 +189,7 @@ fn App() -> impl IntoView {
         match Request::get("/api/overview").send().await {
             Ok(r) => match r.json::<Value>().await {
                 Ok(v) => {
-                    hydrate_selected(v, snapshot, selected, chart_days);
+                    snapshot.set(v);
                     status.set("Ready".into());
                     online.set(true);
                 }
@@ -186,7 +204,7 @@ fn App() -> impl IntoView {
                 if let Some(raw) = event.data().as_string()
                     && let Ok(v) = serde_json::from_str::<Value>(&raw)
                 {
-                    hydrate_selected(v, snapshot, selected, chart_days);
+                    snapshot.set(v);
                     online.set(true);
                 }
             },
@@ -223,10 +241,13 @@ fn App() -> impl IntoView {
     {if tab.get()=="Leaderboard" {view!{<Leaderboard data=data.clone() selected=leaderboard_group tab=tab run=selected/>}.into_any()}
     else if tab.get()=="Paper trading" {view!{<PaperPanel strategies=strategies.clone() papers=papers status=status pending=paper_pending snapshot=snapshot/>}.into_any()}
     else if tab.get()=="History" {view!{<section class="panel"><div class="panel-heading"><div><h2>"Strategy history book"</h2><p>"Immutable versions, descriptions, and lineage"</p></div></div>{strategies.into_iter().map(|s|{let id=text(&s,"id");view!{<article class="history-entry"><div class="section-row"><h3>{text(&s["spec"],"name")}</h3><code>{short(&id)}</code><button class="secondary" on:click=move|_|action(format!("/api/strategies/{id}/archive"),json!({}),status)>{if s["archived"]==true{"Restore"}else{"Archive"}}</button></div><p>{text(&s["spec"],"description")}</p><p class="muted">{format!("{} · {}",date(&s["created_at"]),s["spec"]["kind"]["kind"].as_str().unwrap_or("strategy"))}</p></article>}}).collect_view()}</section>}.into_any()}
-    else {view!{<section class="panel"><div class="panel-heading"><div><h2>"Strategy evaluations"</h2><p>"Net results, with a separate validation window"</p></div><span class="subtle">"Select a run to inspect"</span></div>{if jobs.is_empty(){view!{<div class="empty"><h3>"Your research starts here"</h3><p>"Import market data and register a strategy with the TC CLI, then submit your first backtest."</p><code>"cargo run --bin tc -- demo"</code><p>"Demo creates explicitly labeled synthetic fixtures."</p></div>}.into_any()}else{view!{<div class="table-scroll"><table><thead><tr><th>"STRATEGY / RUN"</th><th>"PERIOD"</th><th>"STATUS"</th><th>"NET CAGR"</th><th>"MAX DRAWDOWN"</th><th>"ELIGIBILITY"</th><th>""</th></tr></thead><tbody>{jobs.iter().map(|j|{let id=text(j,"id");let select_id=id.clone();let strategy=text(j,"strategy");let name=strategies.iter().find(|s|text(s,"id")==strategy).map(|s|text(&s["spec"],"name")).unwrap_or_else(||short(&strategy));let result=&j["result"];let validation=j["period"]=="validation";let growth=if validation{&result["net_cagr"]}else{&result["metrics"]["net_cagr"]};let active=["queued","running","preparing"].contains(&text(j,"state").as_str());view!{<tr class:selected=move||selected.get()==select_id><td><button class="run-name" on:click=move|_|selected.set(id.clone())>{name}</button><small>{short(&text(j,"id"))}</small></td><td><span class="badge">{text(j,"period")}</span></td><td><span class="state">{text(j,"state")}</span>{if !validation && active{format!(" · {:.0}%",j["progress"].as_f64().unwrap_or(0.0)*100.0)}else{String::new()}}</td><td class="numeric">{percent(growth)}</td><td class="numeric risk">{if validation{"Restricted".into()}else{percent(&result["metrics"]["max_drawdown"])}}</td><td>{if validation{"CAGR only"}else if result["metrics"]["eligible"]==true{"Eligible"}else if j["state"]=="completed"{"Review"}else{"—"}}</td><td>{if active{let id=text(j,"id");view!{<button class="text-button" on:click=move|_|action(format!("/api/jobs/{id}/cancel"),json!({}),status)>"Cancel"</button>}.into_any()}else{().into_any()}}</td></tr>}}).collect_view()}</tbody></table></div>}.into_any()}}</section>}.into_any()}}
-    {jobs.iter().find(|j|["Overview","Backtests"].contains(&tab.get().as_str()) && text(j,"id")==selected.get()).map(|job|{let job=job.clone();let validation=job["period"]=="validation";let result=&job["result"];let metric=&result["metrics"];view!{<section class="panel run-detail"><div class="panel-heading"><div><h2>"Run details"</h2><p>{format!("{} → {} · EUR · {} bps fee + {} bps adverse allowance per fill",date(&job["config"]["start"]),date(&job["config"]["end"]),job["config"]["fee_bps"],job["config"]["slippage_bps"])}</p></div><code>{short(&text(&job,"id"))}</code></div>{if validation{view!{<div class="empty"><h3>{format!("Net CAGR {}",percent(&result["net_cagr"]))}</h3><p>"Validation detail is withheld. Explicit local owner inspection marks validation as revealed."</p></div>}.into_any()}else{let benches=items(result,"benchmarks").into_iter().filter(|b|if text(b,"name").starts_with("BTC"){show_btc.get()}else{show_basket.get()}).collect::<Vec<_>>();let equity=items(result,"equity");let fills=items(result,"fills");let id=text(&job,"id");view!{<div class="detail-metrics"><div>"NET RETURN"<strong>{percent(&metric["net_return"])}</strong></div><div>"FEES"<strong>{metric["total_fees"].as_str().and_then(|s|s.parse::<f64>().ok()).map(money).unwrap_or("—".into())}</strong></div><div>"FILLS"<strong>{metric["trades"].to_string()}</strong></div><div>"MEAN MONTH"<strong>{percent(&metric["mean_monthly_return"])}</strong></div></div><div class="chart-controls"><label>"Chart window"<select prop:value=move||chart_days.get().to_string() on:change=move|ev|chart_days.set(event_target_value(&ev).parse().unwrap_or(0))><option value="0">"Full period"</option><option value="90">"Last 90 days"</option><option value="30">"Last 30 days"</option><option value="7">"Last 7 days"</option></select></label><label class="check-label"><input type="checkbox" prop:checked=move||show_btc.get() on:change=move|ev|show_btc.set(event_target_checked(&ev))/>"BTC reference"</label><label class="check-label"><input type="checkbox" prop:checked=move||show_basket.get() on:change=move|ev|show_basket.set(event_target_checked(&ev))/>"Basket reference"</label></div><Chart points=equity fills=fills label="Net portfolio equity" benchmarks=benches/><p class="chart-note">"Green ▲ buys · red ▼ sells · ≤1,500 curve points / ≤200 markers. Metrics use full-resolution observations."</p><div class="warnings">{items(metric,"warnings").into_iter().chain(items(metric,"reasons")).map(|w|view!{<p>{w.as_str().unwrap_or("").to_string()}</p>}).collect_view()}</div><div class="detail-actions"><a class="secondary" href=format!("/api/jobs/{id}/trades?limit=100") target="_blank">"Exact trades (JSON) ↗"</a><button class="secondary" on:click={let sid=text(&job,"strategy");let cid=text(&job,"campaign");move|_|action("/api/tune".into(),json!({"strategy":sid,"campaign":cid,"trials":20,"seed":42}),status)}>"Tune parameters · 20 trials"</button></div>}.into_any()}}</section>}})}
+    else {().into_any()}}
     <footer>"TC · Research, not a promise of returns."<span>"Fees included / independent virtual portfolios / no real orders"</span></footer>
     }}}
+    <Show when=move||["Overview","Backtests"].contains(&tab.get().as_str())>
+        <Evaluations snapshot=snapshot selected=selected status=status/>
+        <RunDetail snapshot=snapshot detail=run_detail status=status chart_days=chart_days show_btc=show_btc show_basket=show_basket tuning_pending=tuning_pending/>
+    </Show>
     </div></main></div>
     }
 }
