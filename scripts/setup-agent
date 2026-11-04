@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Provision a locked, separate strategy-development identity; no agent is started.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+agent_data_dir=$(realpath "${1:-var}")
+agent_account=${2:-tc-agent}
+[[ "$agent_account" =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || { echo 'Invalid agent account name' >&2; exit 1; }
+[[ $(id -u) != 0 ]] || { echo 'Run as the TC owner; the script uses sudo for account setup.' >&2; exit 1; }
+./target/release/tc --data-dir "$agent_data_dir" auth status >/dev/null
+sudo -n true
+agent_home="/var/lib/$agent_account"
+if ! id "$agent_account" >/dev/null 2>&1; then
+  sudo -n useradd --system --user-group --create-home --home-dir "$agent_home" --shell /usr/sbin/nologin "$agent_account"
+fi
+[[ $(id -u "$agent_account") != 0 && $(id -u "$agent_account") != $(id -u) ]]
+[[ $(getent passwd "$agent_account" | cut -d: -f6) == "$agent_home" ]]
+[[ $(getent passwd "$agent_account" | cut -d: -f7) == /usr/sbin/nologin ]]
+[[ $(id -Gn "$agent_account") == "$agent_account" ]] || { echo 'Agent must not have supplementary groups.' >&2; exit 1; }
+[[ $(sudo -n passwd --status "$agent_account" | awk '{print $2}') == L ]]
+if sudo -n -u "$agent_account" sudo -n -l >/dev/null 2>&1; then
+  echo 'Agent unexpectedly has sudo access; fix host policy before continuing.' >&2; exit 1
+fi
+sudo -n chmod 700 "$agent_home"
+sudo -n -u "$agent_account" test ! -r "$agent_data_dir/tradeclimb.db"
+sudo -n -u "$agent_account" test ! -r "$agent_data_dir/auth/owner.key"
+agent_setup_dir=$(mktemp -d "$agent_data_dir/auth/.agent-setup.XXXXXX")
+trap 'rm -rf "$agent_setup_dir"' EXIT
+agent_id_file="$agent_data_dir/auth/$agent_account.id"
+if [[ -f "$agent_id_file" ]]; then
+  ./target/release/tc --data-dir "$agent_data_dir" auth revoke "$(cat "$agent_id_file")" >/dev/null
+fi
+./target/release/tc --data-dir "$agent_data_dir" auth issue-agent --name "$agent_account" --output "$agent_setup_dir/credential" > "$agent_setup_dir/metadata.json"
+sudo -n install -o "$agent_account" -g "$agent_account" -m 600 "$agent_setup_dir/credential" "$agent_home/tc-api.key"
+python3 - "$agent_setup_dir/metadata.json" "$agent_id_file" <<'PY'
+import json,os,sys
+metadata=json.load(open(sys.argv[1]))
+with open(sys.argv[2],'w') as output:output.write(metadata['id']+'\n')
+os.chmod(sys.argv[2],0o600)
+print(json.dumps({'account':metadata['name'],'credential_id':metadata['id'],'scope':'development','expires':metadata['expires']}))
+PY

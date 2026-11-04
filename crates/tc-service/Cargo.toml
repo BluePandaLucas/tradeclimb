@@ -33,6 +33,8 @@ flate2.workspace = true
 tc-sandbox = { version = "0.1.0", path = "../tc-sandbox" }
 
 tempfile.workspace = true
+subtle.workspace = true
+rustix.workspace = true
 
 [dev-dependencies]
 tower.workspace = true

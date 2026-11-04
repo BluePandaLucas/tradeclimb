@@ -41,6 +41,11 @@ fn date(v: &Value) -> String {
         })
         .unwrap_or_default()
 }
+fn sign_in() {
+    if let Some(window) = web_sys::window() {
+        let _ = window.location().set_href("/login");
+    }
+}
 fn action(path: String, body: Value, status: RwSignal<String>) {
     spawn_local(async move {
         status.set("Working…".into());
@@ -51,6 +56,10 @@ fn action(path: String, body: Value, status: RwSignal<String>) {
                 .send()
                 .await
                 .map_err(|e| e.to_string())?;
+            if response.status() == 401 {
+                sign_in();
+                return Err("Sign in required".into());
+            }
             let value: Value = response.json().await.map_err(|e| e.to_string())?;
             if response.ok() {
                 Ok(value)
@@ -187,6 +196,7 @@ fn App() -> impl IntoView {
     });
     spawn_local(async move {
         match Request::get("/api/overview").send().await {
+            Ok(r) if r.status() == 401 => sign_in(),
             Ok(r) => match r.json::<Value>().await {
                 Ok(v) => {
                     snapshot.set(v);
@@ -212,7 +222,16 @@ fn App() -> impl IntoView {
         let _ =
             source.add_event_listener_with_callback("snapshot", callback.as_ref().unchecked_ref());
         callback.forget();
-        let error = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| online.set(false));
+        let error = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+            online.set(false);
+            spawn_local(async move {
+                if let Ok(response) = Request::get("/api/session").send().await
+                    && response.status() == 401
+                {
+                    sign_in();
+                }
+            });
+        });
         source.set_onerror(Some(error.as_ref().unchecked_ref()));
         error.forget();
         on_cleanup(move || source.close());
@@ -226,7 +245,7 @@ fn App() -> impl IntoView {
     }><span aria-hidden="true">{move||if sidebar_collapsed.get(){"»"}else{"«"}}</span></button>
     <div class="nav-label">"WORKSPACE"</div><nav id="workspace-navigation">{["Overview","Backtests","Leaderboard","Paper trading","History"].into_iter().enumerate().map(move|(i,name)|view!{<button aria-label=name title=name class:active=move||tab.get()==name on:click=move|_|{tab.set(name.into());selected.set(String::new());}><span class="nav-icon" aria-hidden="true">{["◈","⌁","♜","◉","▤"][i]}</span><span class="nav-text">{name}</span></button>}).collect_view()}</nav>
     <div class="sidebar-bottom"><span class="mode-dot"></span>"Paper only"<p>"Local workspace · isolated strategies"</p><div class="version">"TC / v0.1"</div></div></aside>
-    <main><header class="topbar"><div class="breadcrumb">"Workspace"<span>"/"</span>{move||tab.get()}</div><div class="connection"><span class:offline=move||!online.get() class="live-dot"></span><span class="connection-text">{move||if online.get(){"Connected"}else{"Reconnecting"}}</span><ThemeToggle/><span class="pill">"NO REAL ORDERS"</span></div></header>
+    <main><header class="topbar"><div class="breadcrumb">"Workspace"<span>"/"</span>{move||tab.get()}</div><div class="connection"><span class:offline=move||!online.get() class="live-dot"></span><span class="connection-text">{move||if online.get(){"Connected"}else{"Reconnecting"}}</span><ThemeToggle/><button class="text-button" on:click=move|_|{spawn_local(async move {let _=Request::post("/api/logout").send().await;sign_in();});}>"Sign out"</button><span class="pill">"NO REAL ORDERS"</span></div></header>
     <div class="content"><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>"Explore ideas. Measure honestly. Keep climbing."</p></div><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());campaign.map(|c|if is_sharpe(c) {"OBJECTIVE · SHARPE".into()} else {format!("GOAL {} NET CAGR",percent(&c["target_cagr"]))}).unwrap_or("OBJECTIVE · SHARPE".into())}}</span>{move||date(&snapshot.get()["time"])}</div></div>
     <Show when=move||tab.get()=="Backtests"><div class="controls"><label>"Strategy"<select prop:value=move||selected_strategy.get() on:change=move|ev|selected_strategy.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"strategies").into_iter().filter(|s|s["archived"]!=true).collect::<Vec<_>>()} key={|s:&Value|text(s,"id")} children={move |s| view!{<option value=text(&s,"id")>{text(&s["spec"],"name")}</option>}}/></select></label>
     <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · {}",short(&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),score_label(&c))}</option>}}/></select></label>

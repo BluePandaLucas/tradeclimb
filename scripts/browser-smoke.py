@@ -7,11 +7,14 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
  state=pathlib.Path(folder)
  subprocess.run([str(root/'target/release/tc'),'--data-dir',folder,'demo'],check=True,capture_output=True)
  with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
+ owner_key=(state/'auth/owner.key').read_text().strip()
+ def api_request(url,**kwargs):
+  return urllib.request.Request(url,headers={'Authorization':'Bearer '+owner_key,'Content-Type':'application/json'},**kwargs)
  service=subprocess.Popen([str(root/'target/release/tc'),'--data-dir',folder,'serve','--bind',f'127.0.0.1:{port}','--assets',str(root/'dist')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  try:
   for _ in range(100):
    try:
-    with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/overview') as response:data=json.load(response)
+    with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:data=json.load(response)
     if all(j['state']=='completed' for j in data['jobs']):break
    except OSError:pass
    time.sleep(.2)
@@ -20,7 +23,9 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page=browser.new_page(viewport={'width':1440,'height':1000},color_scheme="dark")
    errors=[]
    page.on('pageerror',lambda e:errors.append(str(e)))
-   page.goto(f'http://127.0.0.1:{port}',wait_until='domcontentloaded')
+   page.goto(f'http://127.0.0.1:{port}/login',wait_until='domcontentloaded')
+   page.get_by_label('Owner key').fill(owner_key)
+   page.get_by_role('button',name='Sign in',exact=True).click()
    page.get_by_role('heading',name='Overview',exact=True).wait_for()
    assert page.locator('.stats').count()==1
    assert page.locator('.controls').count()==0
@@ -65,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert selects.nth(0).input_value()==initial,'default selection changed while new versions arrived'
    page.get_by_role('button',name='＋ Run backtest',exact=True).click()
    page.wait_for_timeout(1500)
-   with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/overview') as response:submitted=json.load(response)
+   with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:submitted=json.load(response)
    assert submitted['jobs'][0]['strategy']==initial,'submitted strategy differs from visible selection'
    value=next(option.get_attribute('value') for option in selects.nth(0).locator('option').all() if option.get_attribute('value')!=initial)
    selects.nth(0).select_option(value)
@@ -135,7 +140,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert page.locator('.leaderboard th').nth(2).inner_text()=='Sharpe'
    choice=comparison.input_value()
    validation_strategy=next(g for g in submitted['leaderboards'] if g['period']=='development')['entries'][0]['strategy']
-   validation_request=urllib.request.Request(f'http://127.0.0.1:{port}/api/jobs',data=json.dumps({'strategy':validation_strategy,'campaign':submitted['jobs'][0]['campaign'],'period':'validation','idempotency_key':'browser-leaderboard-validation'}).encode(),headers={'Content-Type':'application/json'})
+   validation_request=api_request(f'http://127.0.0.1:{port}/api/jobs',data=json.dumps({'strategy':validation_strategy,'campaign':submitted['jobs'][0]['campaign'],'period':'validation','idempotency_key':'browser-leaderboard-validation'}).encode())
    with urllib.request.urlopen(validation_request) as response:json.load(response)
    page.wait_for_function('Array.from(document.querySelectorAll(".leaderboard select option")).some(o => o.textContent.includes("validation"))')
    assert comparison.input_value()==choice,'comparison changed while new results arrived'
@@ -146,7 +151,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    rows.first.get_by_role('button').click()
    page.get_by_role('heading',name='Run details',exact=True).wait_for()
    assert page.get_by_text('Validation detail is withheld.',exact=False).count()==1
-   with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/overview') as response:validation_data=json.load(response)
+   with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:validation_data=json.load(response)
    assert not validation_data['validation']['revealed'],'leaderboard revealed validation'
    page.get_by_role('button',name='Leaderboard',exact=True).click()
    assert comparison.input_value()==validation_option,'comparison lost after navigation'
@@ -160,7 +165,11 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.get_by_role('button',name='Paper trading',exact=True).click()
    page.get_by_role('heading',name='Paper portfolios').wait_for()
    assert page.locator('.stats,.controls,.run-detail').count()==0
-   start=page.get_by_role('button',name='Start Trend explorer',exact=True)
+   # Mock native provenance in this isolated UI fixture; these are not market results.
+   manifest_path=next((state/'datasets').glob('*/manifest.json'))
+   provenance=json.loads(manifest_path.read_text());provenance['synthetic']=False;provenance['venue']='bitvavo';manifest_path.write_text(json.dumps(provenance))
+   page.wait_for_function('async () => (await (await fetch("/api/overview")).json()).paper_candidates.length > 0')
+   start=page.get_by_role('button',name='Approve Trend explorer',exact=True)
    strategy_id=start.get_attribute('data-strategy-id')
    start.click()
    session=page.locator('.paper-session').first
@@ -171,11 +180,11 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    stopped=session.get_by_role('button',name='Stopped',exact=True)
    stopped.wait_for()
    assert stopped.is_disabled()
-   with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/overview') as response:stopped_data=json.load(response)
+   with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:stopped_data=json.load(response)
    stopped_session=stopped_data['paper'][0]
    assert stopped_session['state']=='stopped'
    page.wait_for_timeout(1500)
-   with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/overview') as response:after=json.load(response)
+   with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:after=json.load(response)
    assert after['paper'][0]['sequence']==stopped_session['sequence']
    page.locator(f'button[data-strategy-id="{strategy_id}"]').click()
    page.wait_for_function('document.querySelectorAll(".paper-session").length === 2')
@@ -189,6 +198,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.screenshot(path='/tmp/tradeclimb-mobile.png',full_page=True)
    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'),'page overflows mobile viewport'
    empty=browser.new_page()
+   empty.context.add_cookies(page.context.cookies())
    empty.on('pageerror',lambda e:errors.append(str(e)))
    empty.route('**/api/events',lambda route:route.abort())
    empty.route('**/api/overview',lambda route:route.fulfill(json={'strategies':[],'campaigns':[],'jobs':[],'leaderboards':[],'datasets':[],'paper':[],'validation':{}}))

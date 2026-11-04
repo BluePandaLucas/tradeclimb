@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Only the private agent workspace, runtime image, and development API are exposed.
+set -euo pipefail
+[[ $# -gt 0 ]] || { echo 'Usage: scripts/run-agent COMMAND [ARGUMENT...]' >&2; exit 1; }
+cd "$(dirname "$0")/.."
+agent_account=${TC_AGENT_ACCOUNT:-tc-agent}
+[[ "$agent_account" =~ ^[a-z_][a-z0-9_-]{0,30}$ ]]
+agent_home="/var/lib/$agent_account"
+[[ $(id -u "$agent_account") != 0 && $(id -u "$agent_account") != $(id -u) ]]
+[[ $(getent passwd "$agent_account" | cut -d: -f6) == "$agent_home" ]]
+[[ $(getent passwd "$agent_account" | cut -d: -f7) == /usr/sbin/nologin ]]
+[[ $(id -Gn "$agent_account") == "$agent_account" ]]
+agent_token_name=${TC_AGENT_TOKEN_NAME:-tc-api.key}
+[[ "$agent_token_name" =~ ^[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,100}$ ]]
+agent_data_dir=$(realpath "${TC_DATA_DIR:-var}")
+agent_socket=$(python3 - "$agent_data_dir/auth/agent-endpoint.json" <<'PY'
+import json,pathlib,stat,sys
+path=pathlib.Path(json.load(open(sys.argv[1]))['socket'])
+assert stat.S_ISSOCK(path.stat().st_mode)
+print(path)
+PY
+)
+exec systemd-run --user --scope --quiet --collect --expand-environment=no \
+  --property=MemoryMax=4G --property=MemorySwapMax=0 --property=TasksMax=128 --property=CPUQuota=200% --property=RuntimeMaxSec=6h \
+  -- sudo -n -u "$agent_account" -- /usr/bin/env -i PATH=/usr/bin:/bin \
+  /usr/bin/bwrap --unshare-all --unshare-user --disable-userns --assert-userns-disabled \
+  --die-with-parent --new-session --cap-drop ALL --clearenv \
+  --ro-bind /usr/bin /usr/bin --ro-bind /usr/lib /usr/lib --ro-bind-try /usr/lib64 /usr/lib64 \
+  --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+  --ro-bind-try /etc/ld.so.cache /etc/ld.so.cache --proc /proc --dev /dev \
+  --size 268435456 --tmpfs /tmp --bind "$agent_home" /workspace \
+  --ro-bind "$agent_socket" /broker/api.sock \
+  --setenv HOME /workspace --setenv PATH /usr/bin:/bin --setenv LANG C.UTF-8 \
+  --setenv TC_API_SOCKET /broker/api.sock --setenv TC_API_TOKEN_FILE "/workspace/$agent_token_name" \
+  --chdir /workspace --remount-ro / -- "$@"

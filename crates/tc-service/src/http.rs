@@ -1,11 +1,11 @@
 use super::*;
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{Path as RoutePath, Query, Request, State},
     http::{StatusCode, header},
     middleware::{self, Next},
     response::{
-        IntoResponse, Response,
+        Html, IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
     routing::{get, post},
@@ -16,19 +16,15 @@ use tokio_stream::{StreamExt, wrappers::IntervalStream};
 struct App {
     store: Store,
 }
-struct ApiError(anyhow::Error);
+struct ApiError(anyhow::Error, StatusCode);
 impl<E: Into<anyhow::Error>> From<E> for ApiError {
     fn from(e: E) -> Self {
-        Self(e.into())
+        Self(e.into(), StatusCode::BAD_REQUEST)
     }
 }
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error":self.0.to_string()})),
-        )
-            .into_response()
+        (self.1, Json(json!({"error":self.0.to_string()}))).into_response()
     }
 }
 type Api<T> = std::result::Result<Json<T>, ApiError>;
@@ -77,8 +73,138 @@ async fn same_origin(request: Request, next: Next) -> Response {
     }
     next.run(request).await
 }
+fn session_cookie(request: &Request) -> Option<&str> {
+    request
+        .headers()
+        .get(header::COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .map(str::trim)
+        .find_map(|cookie| cookie.strip_prefix("tc_session="))
+}
+#[derive(Clone)]
+struct AgentTransport;
+async fn agent_transport(mut request: Request, next: Next) -> Response {
+    if !request.uri().path().starts_with("/api/") {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    request.extensions_mut().insert(AgentTransport);
+    next.run(request).await
+}
+async fn authenticated(State(store): State<Store>, mut request: Request, next: Next) -> Response {
+    let bearer = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "));
+    let principal = match auth::authenticate(&store, bearer, session_cookie(&request)) {
+        Ok(p) => p,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error":"authentication required"})),
+            )
+                .into_response();
+        }
+    };
+    if request.extensions().get::<AgentTransport>().is_some() && principal.role != auth::Role::Agent
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if !auth::allowed(
+        &store,
+        &principal,
+        request.method().as_str(),
+        request.uri().path(),
+    ) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error":"agent credentials permit development only"})),
+        )
+            .into_response();
+    }
+    request.extensions_mut().insert(principal);
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    response
+}
+async fn login_page() -> Response {
+    let mut response = Html(include_str!("login.html")).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    response
+        .headers_mut()
+        .insert("x-frame-options", header::HeaderValue::from_static("DENY"));
+    response
+}
+#[derive(Deserialize)]
+struct Login {
+    key: String,
+}
+async fn login(
+    State(app): State<Arc<App>>,
+    headers: header::HeaderMap,
+    Json(input): Json<Login>,
+) -> Response {
+    match auth::login(&app.store, &input.key) {
+        Ok(session) => {
+            let secure = if headers
+                .get(header::ORIGIN)
+                .and_then(|h| h.to_str().ok())
+                .is_some_and(|s| s.starts_with("https://"))
+            {
+                "; Secure"
+            } else {
+                ""
+            };
+            let mut response = Json(json!({"role":"owner"})).into_response();
+            if let Ok(cookie) = header::HeaderValue::from_str(&format!(
+                "tc_session={session}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200{secure}"
+            )) {
+                response.headers_mut().insert(header::SET_COOKIE, cookie);
+            }
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                header::HeaderValue::from_static("no-store"),
+            );
+            response
+        }
+        Err(_) => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error":"sign-in failed"})),
+        )
+            .into_response(),
+    }
+}
+async fn session(Extension(principal): Extension<auth::Principal>) -> Api<Value> {
+    Ok(Json(
+        json!({"role":principal.role,"id":principal.id,"expires":principal.expires}),
+    ))
+}
+async fn logout(
+    State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
+) -> std::result::Result<Response, ApiError> {
+    auth::logout(&app.store, &principal)?;
+    let mut response = Json(json!({"signed_out":true})).into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        header::HeaderValue::from_static(
+            "tc_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+        ),
+    );
+    Ok(response)
+}
 fn routes(store: Store) -> Router {
-    Router::new()
+    let protected = Router::new()
+        .route("/api/session", get(session))
+        .route("/api/logout", post(logout))
         .route("/api/overview", get(overview))
         .route("/api/events", get(events))
         .route("/api/jobs", post(submit))
@@ -92,9 +218,15 @@ fn routes(store: Store) -> Router {
         .route("/api/tune", post(tune))
         .route("/api/tuning/{id}/cancel", post(cancel_tuning))
         .route("/api/infer", post(inference))
+        .route_layer(middleware::from_fn_with_state(store.clone(), authenticated));
+    protected
+        .route("/login", get(login_page).post(login))
         .with_state(Arc::new(App { store }))
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn(same_origin))
+}
+fn store_approval_missing(store: &Store, id: &str) -> bool {
+    store.get::<Value>("paper_approval", id).is_err()
 }
 pub async fn serve(
     store: Store,
@@ -102,7 +234,21 @@ pub async fn serve(
     assets: &std::path::Path,
     workers: usize,
 ) -> Result<()> {
-    let listener = tokio::net::TcpListener::bind(bind).await?;
+    let address: std::net::SocketAddr = bind
+        .parse()
+        .context("bind must be a loopback IP and port")?;
+    ensure!(
+        address.ip().is_loopback(),
+        "authenticated TC binds to loopback; use an HTTPS reverse proxy for remote access"
+    );
+    let assets = assets
+        .canonicalize()
+        .context("web assets directory missing")?;
+    ensure!(
+        !store.root.starts_with(&assets) && !assets.starts_with(&store.root),
+        "web assets and private data must be separate directories"
+    );
+    let listener = tokio::net::TcpListener::bind(address).await?;
     let _ownership = ServiceOwnership::acquire(&store)?;
     for kind in ["worker_lease", "paper_lease"] {
         for lease in store.objects::<WorkerLease>(kind)? {
@@ -143,6 +289,12 @@ pub async fn serve(
             if let Ok(sessions) = paper_store.objects::<PaperSession>("paper") {
                 for p in sessions {
                     if matches!(p.state.as_str(), "starting" | "running")
+                        && store_approval_missing(&paper_store, &p.id)
+                    {
+                        let _ = paper_store.stop_paper(&p.id);
+                        continue;
+                    }
+                    if matches!(p.state.as_str(), "starting" | "running")
                         && active.insert(p.id.clone())
                     {
                         let store = paper_store.clone();
@@ -159,8 +311,31 @@ pub async fn serve(
         while tasks.join_next().await.is_some() {}
         Ok::<(), anyhow::Error>(())
     });
+    // A separate, agent-only transport is the sole host socket mounted in
+    // the development sandbox. Owner cookies/credentials cannot use it.
+    use std::os::unix::fs::PermissionsExt;
+    let agent_directory = tempfile::Builder::new().prefix("tc-agent-api-").tempdir()?;
+    fs::set_permissions(agent_directory.path(), fs::Permissions::from_mode(0o755))?;
+    let socket = agent_directory.path().join("api.sock");
+    let unix = tokio::net::UnixListener::bind(&socket)?;
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o666))?;
+    save_json(
+        &store.root.join("auth/agent-endpoint.json"),
+        &json!({"socket":socket,"pid":std::process::id()}),
+    )?;
+    let agent_router = routes(store.clone()).layer(middleware::from_fn(agent_transport));
+    let agent_shutdown = store.shutdown.clone();
+    let agent_server = tokio::spawn(async move {
+        axum::serve(unix, agent_router)
+            .with_graceful_shutdown(async move {
+                while !agent_shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            })
+            .await
+    });
     let router = routes(store.clone()).fallback_service(
-        tower_http::services::ServeDir::new(assets).append_index_html_on_directories(true),
+        tower_http::services::ServeDir::new(&assets).append_index_html_on_directories(true),
     );
     let (close, closed) = tokio::sync::oneshot::channel::<()>();
     let server = std::future::IntoFuture::into_future(
@@ -187,6 +362,14 @@ pub async fn serve(
             tracing::warn!(%error,"background shutdown deadline reached");
         }
     }
+    if tokio::time::timeout(Duration::from_secs(2), agent_server)
+        .await
+        .is_err()
+    {
+        tracing::warn!("agent API shutdown deadline reached");
+    }
+    let _ = fs::remove_file(store.root.join("auth/agent-endpoint.json"));
+    drop(agent_directory);
     result?;
     Ok(())
 }
@@ -234,28 +417,78 @@ async fn shutdown_signal() {
 
 fn overview_value(store: &Store) -> Result<Value> {
     Ok(
-        json!({"leaderboards":leaderboard::groups(store)?,"strategies":store.objects::<RegisteredStrategy>("strategy")?,"campaigns":store.objects::<Campaign>("campaign")?,"jobs":store.jobs()?.into_iter().take(50).collect::<Vec<_>>(),"paper":store.objects::<PaperSession>("paper")?,"datasets":tc_data::list(&store.root)?,"validation":store.ledger()?,"tuning":store.objects::<Value>("tuning")?,"time":now()}),
+        json!({"leaderboards":leaderboard::groups(store)?,"strategies":store.objects::<RegisteredStrategy>("strategy")?,"campaigns":store.objects::<Campaign>("campaign")?,"jobs":store.jobs()?.into_iter().take(50).collect::<Vec<_>>(),"paper":store.objects::<PaperSession>("paper")?,"datasets":tc_data::list(&store.root)?,"validation":store.ledger()?,"tuning":store.objects::<Value>("tuning")?,"paper_candidates":store.paper_candidates()?,"paper_approvals":store.objects::<Value>("paper_approval")?,"time":now()}),
     )
 }
-async fn overview(State(app): State<Arc<App>>) -> Api<Value> {
-    Ok(Json(overview_value(&app.store)?))
+fn scoped_overview(store: &Store, principal: &auth::Principal) -> Result<Value> {
+    let mut value = overview_value(store)?;
+    if principal.role == auth::Role::Agent {
+        for field in ["jobs", "leaderboards"] {
+            if let Some(rows) = value[field].as_array_mut() {
+                rows.retain(|row| row["period"] == "development");
+            }
+        }
+        value
+            .as_object_mut()
+            .context("overview object")?
+            .remove("validation");
+        value
+            .as_object_mut()
+            .context("overview object")?
+            .remove("paper");
+        value
+            .as_object_mut()
+            .context("overview object")?
+            .remove("paper_candidates");
+        value
+            .as_object_mut()
+            .context("overview object")?
+            .remove("paper_approvals");
+    }
+    Ok(value)
+}
+async fn overview(
+    State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
+) -> Api<Value> {
+    Ok(Json(scoped_overview(&app.store, &principal)?))
 }
 async fn events(
     State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
 ) -> Sse<impl tokio_stream::Stream<Item = std::result::Result<Event, Infallible>>> {
     let shutdown = app.store.shutdown.clone();
+    let auth_store = app.store.clone();
+    let identity = principal.clone();
     let stream = IntervalStream::new(tokio::time::interval(Duration::from_secs(1)))
-        .take_while(move |_| !shutdown.load(std::sync::atomic::Ordering::Acquire))
+        .take_while(move |_| {
+            !shutdown.load(std::sync::atomic::Ordering::Acquire)
+                && auth::active(&auth_store, &identity)
+        })
         .map(move |_| {
-            let data = overview_value(&app.store)
+            let data = scoped_overview(&app.store, &principal)
                 .and_then(|v| Ok(serde_json::to_string(&v)?))
                 .unwrap_or_else(|_| "{\"error\":\"snapshot unavailable\"}".into());
             Ok(Event::default().event("snapshot").data(data))
         });
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
-async fn submit(State(app): State<Arc<App>>, Json(input): Json<Submission>) -> Api<Job> {
-    Ok(Json(app.store.submit(input)?))
+async fn submit(
+    State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
+    Json(input): Json<Submission>,
+) -> Api<Job> {
+    if principal.role == auth::Role::Agent && input.period != Period::Development {
+        return Err(ApiError(
+            anyhow::anyhow!("agents may submit development only"),
+            StatusCode::FORBIDDEN,
+        ));
+    }
+    Ok(Json(auth::submit(
+        &app.store,
+        input,
+        (principal.role == auth::Role::Agent).then_some(principal.id.as_str()),
+    )?))
 }
 async fn cancel(State(app): State<Arc<App>>, RoutePath(id): RoutePath<String>) -> Api<Job> {
     Ok(Json(app.store.cancel(&id)?))
@@ -372,9 +605,15 @@ async fn archive(State(app): State<Arc<App>>, RoutePath(id): RoutePath<String>) 
     Ok(Json(json!({"archived":s.archived})))
 }
 async fn start_paper(State(app): State<Arc<App>>, Json(v): Json<Value>) -> Api<PaperSession> {
-    Ok(Json(app.store.start_paper(
-        v["strategy"].as_str().context("strategy required")?,
-    )?))
+    Ok(Json(
+        app.store.approve_paper(
+            v["strategy"].as_str().context("strategy required")?,
+            v["job"]
+                .as_str()
+                .context("eligible development job required")?,
+            v["approve"].as_bool() == Some(true),
+        )?,
+    ))
 }
 async fn stop_paper(
     State(app): State<Arc<App>>,
@@ -404,7 +643,11 @@ struct Tune {
 fn default_trials() -> usize {
     20
 }
-async fn tune(State(app): State<Arc<App>>, Json(input): Json<Tune>) -> Api<Value> {
+async fn tune(
+    State(app): State<Arc<App>>,
+    Extension(principal): Extension<auth::Principal>,
+    Json(input): Json<Tune>,
+) -> Api<Value> {
     ensure_tune(&input)?;
     let parent: RegisteredStrategy = app.store.get("strategy", &input.strategy)?;
     let campaign: Campaign = app.store.get("campaign", &input.campaign)?;
@@ -417,7 +660,7 @@ async fn tune(State(app): State<Arc<App>>, Json(input): Json<Tune>) -> Api<Value
     store.put(
         "tuning",
         &id,
-        &json!({"id":id,"state":"running","seed":input.seed,"trials":input.trials,"strategy":input.strategy,"campaign":input.campaign,"objective":campaign.objective,"jobs":[]}),
+        &json!({"id":id,"state":"running","seed":input.seed,"trials":input.trials,"strategy":input.strategy,"campaign":input.campaign,"objective":campaign.objective,"jobs":[],"agent":if principal.role==auth::Role::Agent {Some(principal.id.clone())}else{None}}),
     )?;
     tokio::spawn(async move {
         let result = run_tuning(&store, &input, &parent, &id).await;
@@ -503,13 +746,18 @@ async fn run_tuning(
         if !seen.insert(s.id.clone()) {
             continue;
         }
-        let job = store.submit(Submission {
-            strategy: s.id,
-            campaign: input.campaign.clone(),
-            period: Period::Development,
-            idempotency_key: format!("tune:{id}:{trial}"),
-            slippage_bps: None,
-        })?;
+        let actor = store.get::<Value>("tuning", id)?;
+        let job = auth::submit(
+            store,
+            Submission {
+                strategy: s.id,
+                campaign: input.campaign.clone(),
+                period: Period::Development,
+                idempotency_key: format!("tune:{id}:{trial}"),
+                slippage_bps: None,
+            },
+            actor["agent"].as_str(),
+        )?;
         jobs.push(job.id.clone());
         // Publish membership immediately, rather than waiting for completion.
         update_tuning(store, id, json!({"jobs":jobs}))?;
@@ -564,6 +812,104 @@ async fn run_tuning(
 mod tests {
     use super::*;
     use tower::ServiceExt;
+    fn owner_request(store: &Store) -> axum::http::request::Builder {
+        let key = fs::read_to_string(auth::owner_key_path(store)).unwrap();
+        axum::http::Request::builder().header("authorization", format!("Bearer {}", key.trim()))
+    }
+    #[tokio::test]
+    async fn revoked_agent_stream_closes_and_validation_cannot_consume_budget() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let file = temp.path().join("agent.key");
+        let credential = auth::issue_agent(&store, "stream", &file, 30).unwrap();
+        let key = fs::read_to_string(file).unwrap();
+        let request=axum::http::Request::builder().method("POST").uri("/api/jobs").header("host","localhost").header("authorization",format!("Bearer {}",key.trim())).header("content-type","application/json")
+            .body(axum::body::Body::from(serde_json::to_vec(&json!({"strategy":"none","campaign":"none","period":"validation","idempotency_key":"denied"})).unwrap())).unwrap();
+        assert_eq!(
+            routes(store.clone())
+                .oneshot(request)
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(store.ledger().unwrap()["used"], 0);
+        let request = axum::http::Request::builder()
+            .uri("/api/events")
+            .header("host", "localhost")
+            .header("authorization", format!("Bearer {}", key.trim()))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let mut stream = routes(store.clone())
+            .oneshot(request)
+            .await
+            .unwrap()
+            .into_body()
+            .into_data_stream();
+        assert!(stream.next().await.is_some());
+        auth::revoke_agent(&store, credential["id"].as_str().unwrap()).unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), stream.next())
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    #[tokio::test]
+    async fn http_rejects_anonymous_and_agent_owner_actions() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let keyfile = temp.path().join("agent.key");
+        auth::issue_agent(&store, "dev", &keyfile, 30).unwrap();
+        let key = fs::read_to_string(keyfile).unwrap();
+        let app = routes(store.clone());
+        let anonymous = axum::http::Request::builder()
+            .uri("/api/overview")
+            .header("host", "localhost")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(anonymous).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        for path in [
+            "/api/paper",
+            "/api/campaigns",
+            "/api/infer",
+            "/api/strategies/x/archive",
+        ] {
+            let request = axum::http::Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("host", "localhost")
+                .header("authorization", format!("Bearer {}", key.trim()))
+                .body(axum::body::Body::empty())
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        let request = axum::http::Request::builder()
+            .uri("/api/overview")
+            .header("host", "localhost")
+            .header("authorization", format!("Bearer {}", key.trim()))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), 1_000_000)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            body.get("validation").is_none()
+                && body.get("paper").is_none()
+                && body.get("paper_candidates").is_none()
+        );
+    }
     #[test]
     fn tuning_updates_keep_trial_membership_and_context() {
         let directory = tempfile::tempdir().unwrap();
@@ -582,7 +928,7 @@ mod tests {
     async fn open_browser_stream_ends_when_shutdown_is_requested() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(directory.path()).unwrap();
-        let request = axum::http::Request::builder()
+        let request = owner_request(&store)
             .uri("/api/events")
             .header("host", "localhost")
             .body(axum::body::Body::empty())
@@ -649,7 +995,7 @@ mod tests {
                 format!("/api/jobs/{}?days=7", job.id),
                 "/api/overview".into(),
             ] {
-                let req = axum::http::Request::builder()
+                let req = owner_request(&store)
                     .uri(route)
                     .header("host", "localhost")
                     .body(axum::body::Body::empty())
@@ -663,7 +1009,7 @@ mod tests {
                 assert!(!text.contains("SECRET"));
                 assert!(!text.contains("\"fills\""));
             }
-            let req = axum::http::Request::builder()
+            let req = owner_request(&store)
                 .uri(format!("/api/jobs/{}/trades", job.id))
                 .header("host", "localhost")
                 .body(axum::body::Body::empty())
@@ -710,7 +1056,7 @@ mod tests {
             "/api/jobs/reserved/trades",
             "/api/overview",
         ] {
-            let req = axum::http::Request::builder()
+            let req = owner_request(&store)
                 .uri(route)
                 .header("host", "localhost")
                 .body(axum::body::Body::empty())
@@ -733,7 +1079,8 @@ mod tests {
     #[tokio::test]
     async fn dns_rebinding_host_is_rejected() {
         let dir = tempfile::tempdir().unwrap();
-        let req = axum::http::Request::builder()
+        let store = Store::open(dir.path()).unwrap();
+        let req = owner_request(&store)
             .uri("/api/overview")
             .header("host", "attacker.invalid:8080")
             .body(axum::body::Body::empty())
@@ -750,8 +1097,9 @@ mod tests {
     #[tokio::test]
     async fn cross_origin_mutation_is_denied() {
         let dir = tempfile::tempdir().unwrap();
-        let app = routes(Store::open(dir.path()).unwrap());
-        let request = axum::http::Request::builder()
+        let store = Store::open(dir.path()).unwrap();
+        let app = routes(store.clone());
+        let request = owner_request(&store)
             .method("POST")
             .uri("/api/jobs")
             .header("host", "localhost:8080")

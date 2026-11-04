@@ -1,6 +1,6 @@
 # Running TradeClimb locally
 
-TradeClimb v1 runs as a native Rust service and browser WASM application. It never sends orders to Bitvavo. Account keys are not needed. External strategies execute inside a Linux sandbox. Use the isolated build command for untrusted strategy projects; manually running Cargo still executes build scripts on the host. The service, trusted SDK/compiler/cache, local owner account, and LAN users remain trusted; authentication and isolation of development agents are separate V2 work.
+TradeClimb runs as a native Linux service and browser WASM application. It never sends orders to Bitvavo. Account keys are not needed. External strategies execute inside a Linux sandbox. Use the isolated build command for untrusted strategy projects; manually running Cargo still executes build scripts on the host. The service, trusted SDK/compiler/cache, and local owner account remain trusted. The owner browser authenticates separately from development-only agent credentials; use the prepared agent launcher for untrusted agent programs.
 
 ## Start the interface
 
@@ -11,13 +11,31 @@ source "$HOME/.cargo/env"
 ./scripts/start
 ```
 
-Open `http://127.0.0.1:8080`. The start script builds browser assets and the release binary, then starts the local service. To allow LAN access explicitly:
+Open `http://127.0.0.1:8080` and sign in with the private owner key. Locate it using `target/release/tc auth status`; the key itself is only in the reported local file, never command output or a URL. Sign-in creates a 12-hour HttpOnly, SameSite=Strict session; it is not stored in browser local storage. **Sign out** invalidates it. `tc auth rotate-owner` replaces the key and invalidates existing owner sessions; it does not reset research/validation budgets.
+
+The service accepts loopback IP listeners only. For another device, use an HTTPS reverse proxy, configure `TC_ALLOWED_HOSTS` for its hostname, and forward the browser's Host/Origin. HTTPS-origin sign-in sets Secure cookies. The static assets directory must be separate from private data. Anonymous APIs fail with 401; agent access outside development fails with 403. One service owns a data directory at a time. Data defaults to `var/` and is owner-only (0700), including all raw data, model caches and evaluation artifacts. Backups are also private. Restoring a backup generates a new owner key because the key file is not included; old owner sessions stop working.
+
+## Development-agent access
+
+The tool has one owner; there is no multi-user registration or third-party identity service. Future strategy orchestration remains a separate project. Provision its locked Unix identity and scoped credential as the owner:
 
 ```bash
-./scripts/start --bind 0.0.0.0:8080
+./scripts/setup-agent var
 ```
 
-Use the PC's LAN IP address in the browser. Set `TC_ALLOWED_HOSTS` for a custom DNS hostname. Keep the service on a trusted LAN; this release has no login. One service owns a data directory at a time. Data defaults to `var/`, which is ignored by Git.
+This uses noninteractive sudo to create/reuse `tc-agent`, with a locked password, no login shell or supplementary groups, and no sudo access. It issues a 30-day development credential into that account's private home. Re-running revokes its preceding credential. `tc auth status` lists credential IDs/expiry/revocation without secret values; `tc auth revoke ID` revokes one, closes its streams, and cancels its queued/running jobs and tuning controllers.
+
+Start TC first, then run an explicitly selected program through the prepared launcher:
+
+```bash
+./scripts/run-agent /usr/bin/python3 -c 'import os; print(os.environ["TC_API_SOCKET"])'
+```
+
+The launcher uses a separate UID, private user/PID/network/IPC namespaces, a read-only system image, a writable `/workspace` mapped to the agent home, 256-MiB temporary space, no owner environment, and a cgroup capped at 4 GiB/no swap, 128 tasks, two CPU cores and six hours. The only host service it can reach is the mounted `TC_API_SOCKET`, speaking ordinary HTTP over a Unix socket. Read the agent key from `TC_API_TOKEN_FILE` and send `Authorization: Bearer KEY`. The socket rejects owner credentials/cookies and login entirely. This prevents an agent from reaching owner browser sessions, local debug ports, other local services, or the Internet. Do not run untrusted agents directly with `sudo -u`; the launcher is the supported boundary.
+
+Agents can read development results and submit/tune development evaluations. Idempotency and cancellation are credential-scoped. They cannot query validation, create campaigns, archive strategies, invoke owner model scopes, promote/stop paper sessions, or see owner paper/validation snapshots. Token revocation/expiry also closes long-lived streams. Actual agent/model tooling, bounded inference for strategy invention, reviewed SDK distribution and candidate handoff will be connected when the separate orchestrator project starts; no agent/model process is launched by setup.
+
+Local CLI operations still belong to the filesystem owner. Raw owner credentials must never be given to agents. Candidate source copying uses Linux openat2 with beneath/no-symlink resolution to reject symlink/directory-swap escapes, special files and private TC directories before isolated builds.
 
 The header theme toggle follows the system setting by default. An explicit light/dark preference is remembered in this browser; **System** restores automatic detection. To exit the running service, press **Ctrl+C**, or type **q**, **quit**, or **exit** and press Enter in its terminal. SIGTERM also requests a clean shutdown.
 
@@ -97,7 +115,7 @@ Builds snapshot regular source files (no symlinks or special files; at most 10,0
 
 Cargo output remains on bounded tmpfs. Only a successful Linux executable (at most 64 MiB) is copied to the selected host output path. Build metadata reports its SHA-256; registration retains those executable bytes as before. Isolated builds are not a claim of compiler reproducibility. The trusted platform/SDK itself is built with the normal repository workflow.
 
-`./scripts/check-sandbox` runs the real prerequisite probe, adversarial resource/confinement tests, an offline malicious-build-script fixture, and scoped model calls through historical workers. These Linux tests are explicitly ignored in the portable Rust suite and run separately on a configured host and in CI. This boundary does not isolate an unsandboxed development agent running as the owner: owner/agent account separation, authentication, and validation storage policy remain necessary V2 work.
+`./scripts/check-sandbox` runs the real prerequisite probe, adversarial resource/confinement tests, an offline malicious-build-script fixture, and scoped model calls through historical workers. These Linux tests are explicitly ignored in the portable Rust suite and run separately on a configured host and in CI. An agent running directly as the owner remains outside this boundary; use the separate account and mandatory agent launcher described above. It intentionally has no model-provider or other external-network access until the orchestrator integration is designed.
 
 ## Register and evaluate strategies
 
@@ -177,3 +195,11 @@ python3 scripts/benchmark.py var DATASET_ID
 ```
 
 The benchmark runs a 20/100 moving-average fixture across the complete snapshot, with the drawdown halt disabled so it exercises the whole window. It emits timing/row counts only, withholding financial metrics and curves. It does not create a development/validation result or consume validation feedback. Compilation and initial import are excluded. Report results with the dataset, hardware, and whether data is synthetic; a measured fixture is not a latency guarantee for arbitrary external strategies or model calls.
+
+## Owner-approved paper promotion
+
+The Paper trading page lists each version's latest completed development evaluation, ranked by Sharpe when it qualifies. **Approve NAME** explicitly approves that immutable version and starts an independent EUR 10,000 paper session. The backend requires accepted, non-synthetic Bitvavo data, development risk eligibility, a defined Sharpe/CAGR, and observed drawdown at most 15%. The 15% growth objective is an aspiration, not a rejection threshold. A scalar validation score does not certify validation risk.
+
+API owners send `{"strategy":"ID","job":"DEVELOPMENT_JOB_ID","approve":true}` to `/api/paper`. Approval, session creation and its audit entry are committed together; repeated starts retain the existing active portfolio. The `paper_approvals` overview entries retain the basis, Sharpe/drawdown/CAGR, growth-target status, approved job/version and owner time. Old unapproved sessions stop on service startup; historical journals remain. Existing simulation risk halts still apply and are not a guaranteed loss ceiling.
+
+`python3 scripts/security-smoke.py --agent-account tc-agent` verifies real owner login, scoped agent requests/revocation, an actual separate UID, host file denial, and network isolation with the development Unix socket. Browser and live-paper smoke fixtures explicitly mock native provenance/eligibility to exercise approval; their data is not market evidence.

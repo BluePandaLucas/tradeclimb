@@ -41,7 +41,7 @@ for command in (b'q\n', b'exit\n', b'\x03'):
             else:
                 raise AssertionError(f'server did not become ready: {transcript.decode(errors="replace")}')
             # Reproduces the browser connection that previously prevented exit.
-            stream = urllib.request.urlopen(f'http://127.0.0.1:{port}/api/events', timeout=10)
+            stream = urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}/api/events',headers={'Authorization':'Bearer '+(pathlib.Path(state)/'auth/owner.key').read_text().strip()}), timeout=10)
             assert stream.readline().startswith(b'event:')
             started = time.monotonic()
             os.write(master, command)

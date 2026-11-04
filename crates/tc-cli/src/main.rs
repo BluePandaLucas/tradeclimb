@@ -35,6 +35,10 @@ enum Action {
         accept_gaps: bool,
     },
     Demo,
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
     /// Verify local namespace and cgroup prerequisites without running strategy code.
     SandboxCheck,
     /// Compile a strategy offline inside the Linux sandbox, including build scripts.
@@ -111,6 +115,22 @@ enum Action {
         id: String,
     },
 }
+#[derive(Subcommand)]
+enum AuthAction {
+    Status,
+    IssueAgent {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 30)]
+        days: u32,
+    },
+    Revoke {
+        id: String,
+    },
+    RotateOwner,
+}
 fn print(value: &impl serde::Serialize) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
@@ -125,6 +145,22 @@ fn main() -> Result<()> {
         .init();
     let store = Store::open(&args.data_dir)?;
     match args.command {
+        Action::Auth { action } => match action {
+            AuthAction::Status => print(&tc_service::auth::status(&store)?),
+            AuthAction::IssueAgent { name, output, days } => print(&tc_service::auth::issue_agent(
+                &store, &name, &output, days,
+            )?),
+            AuthAction::Revoke { id } => {
+                tc_service::auth::revoke_agent(&store, &id)?;
+                print(&serde_json::json!({"revoked":id}))
+            }
+            AuthAction::RotateOwner => {
+                tc_service::auth::rotate_owner(&store)?;
+                print(
+                    &serde_json::json!({"owner_key_file":tc_service::auth::owner_key_path(&store),"sessions_revoked":true}),
+                )
+            }
+        },
         Action::SandboxCheck => print(&tc_service::sandbox_check()?),
         Action::Worker { id } => {
             uuid_check(&id)?;

@@ -71,7 +71,7 @@ fn main()->anyhow::Result<()> {tc_sdk::serve(Fixture(false))}
         listener.bind(('127.0.0.1',0)); port=listener.getsockname()[1]
     base=f'http://127.0.0.1:{port}'
     def request(path,body=None):
-        req=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+        req=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+(data/'auth/owner.key').read_text().strip()})
         with urllib.request.urlopen(req,timeout=10) as response:return json.load(response)
     def until(fn):
         deadline=time.monotonic()+120

@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='tradeclimb-smoke-') as folder:
         return subprocess.Popen([str(binary), '--data-dir', str(state / 'data'), 'serve', '--bind', f'127.0.0.1:{port}', '--assets', str(ROOT / 'dist')], cwd=ROOT, stdout=log, stderr=log)
     def request(path, body=None):
         data = None if body is None else json.dumps(body).encode()
-        req = urllib.request.Request(base + path, data=data, headers={'Content-Type': 'application/json'})
+        req = urllib.request.Request(base + path, data=data, headers={'Content-Type': 'application/json', 'Authorization':'Bearer '+(state/'data/auth/owner.key').read_text().strip()})
         with urllib.request.urlopen(req, timeout=20) as response:
             return json.load(response)
     def until(check, seconds=120):
@@ -126,7 +126,16 @@ with tempfile.TemporaryDirectory(prefix='tradeclimb-smoke-') as folder:
             return not stat.exists() or stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z'
         until(no_worker, 10)
         if args.live:
-            paper = request('/api/paper', dict(strategy=external['id']))
+            # The promotion path requires a native-data, eligible evaluation. This
+            # isolated fixture substitutes provenance/metrics only to exercise
+            # authorization and live recovery; it is not market evidence.
+            native_manifest=state/'data/datasets'/demo['dataset']/'manifest.json'
+            provenance=json.loads(native_manifest.read_text());provenance['synthetic']=False;provenance['venue']='bitvavo';native_manifest.write_text(json.dumps(provenance))
+            with sqlite3.connect(state/'data/tradeclimb.db') as db:
+                raw=db.execute('SELECT data FROM jobs WHERE id=?',(run['id'],)).fetchone()[0]
+                fixture=json.loads(raw);fixture['result']['metrics'].update(eligible=True,max_drawdown=0.01,sharpe=1.0,net_cagr=0.10)
+                db.execute('UPDATE jobs SET data=? WHERE id=?',(json.dumps(fixture),run['id']))
+            paper = request('/api/paper', dict(strategy=external['id'],job=run['id'],approve=True))
             def paper_filled():
                 p = next(p for p in request('/api/overview')['paper'] if p['id'] == paper['id'])
                 assert p['state'] in ('starting','running'), p

@@ -26,6 +26,10 @@ jobs:
           ./scripts/build-web
           python3 scripts/smoke.py
           ./scripts/check-sandbox
+          agent_test_data=$(mktemp -d)
+          ./scripts/setup-agent "$agent_test_data"
+          python3 scripts/security-smoke.py --agent-account tc-agent
+          rm -rf "$agent_test_data"
   dependencies:
     runs-on: ubuntu-latest
     steps:

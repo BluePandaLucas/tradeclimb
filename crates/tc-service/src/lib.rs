@@ -1,10 +1,12 @@
 //! Local control plane: durable jobs, validation ledger, and paper portfolios.
+pub mod auth;
 mod broker;
 mod build;
 mod http;
 mod inference;
 mod leaderboard;
 mod paper;
+mod promotion;
 use anyhow::{Context, Result, ensure};
 pub use build::{build_strategy, sandbox_check};
 pub use http::serve;
@@ -145,6 +147,20 @@ impl Store {
     pub fn open(root: impl AsRef<Path>) -> Result<Self> {
         fs::create_dir_all(root.as_ref())?;
         let root = fs::canonicalize(root)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            let meta = fs::metadata(&root)?;
+            ensure!(
+                root.parent().is_some() && meta.permissions().mode() & 0o1000 == 0,
+                "use a dedicated private data directory"
+            );
+            ensure!(
+                meta.uid() == fs::metadata("/proc/self")?.uid(),
+                "data directory must be owned by the TC process user"
+            );
+            fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
+        }
         let store = Self {
             root,
             shutdown: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -152,6 +168,7 @@ impl Store {
         };
         let db = store.db()?;
         db.execute_batch("CREATE TABLE IF NOT EXISTS objects(kind TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,key TEXT UNIQUE NOT NULL,fingerprint TEXT NOT NULL,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS validation(fingerprint TEXT PRIMARY KEY,job TEXT NOT NULL); CREATE TABLE IF NOT EXISTS ledger(id INTEGER PRIMARY KEY CHECK(id=1),used INTEGER NOT NULL,maximum INTEGER NOT NULL,revealed INTEGER NOT NULL); INSERT OR IGNORE INTO ledger VALUES(1,0,10,0); CREATE TABLE IF NOT EXISTS paper_events(session TEXT NOT NULL,sequence INTEGER NOT NULL,frame TEXT NOT NULL,fills TEXT NOT NULL,PRIMARY KEY(session,sequence)); CREATE TABLE IF NOT EXISTS model_cache(scope TEXT NOT NULL,key TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(scope,key));")?;
+        auth::initialize(&store)?;
         Ok(store)
     }
     pub fn db(&self) -> Result<Connection> {
@@ -527,6 +544,11 @@ impl Store {
     pub fn backup(&self, destination: &Path) -> Result<()> {
         ensure!(!destination.exists(), "backup destination already exists");
         fs::create_dir_all(destination)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(destination, fs::Permissions::from_mode(0o700))?;
+        }
         let db = self.db()?;
         let mut target = Connection::open(destination.join("tradeclimb.db"))?;
         let backup = rusqlite::backup::Backup::new(&db, &mut target)?;
@@ -543,54 +565,81 @@ impl Store {
     }
 }
 fn collect_source(root: &Path, path: &Path, out: &mut Vec<(String, Vec<u8>)>) -> Result<()> {
+    use rustix::fs::{CWD, Mode, OFlags, ResolveFlags, openat2};
+    use std::os::fd::AsRawFd;
+    ensure!(root == path, "snapshot must start at its root");
+    // Kernel path resolution rejects symlinks at every component, including
+    // concurrent directory swaps by an untrusted agent. No unsafe fallback.
+    let directory = openat2(
+        CWD,
+        root,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+        ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_MAGICLINKS,
+    )?;
     fn visit(
-        root: &Path,
-        path: &Path,
+        directory: &std::os::fd::OwnedFd,
+        relative: &Path,
         out: &mut Vec<(String, Vec<u8>)>,
         total: &mut usize,
-        depth: usize,
         entries: &mut usize,
+        depth: usize,
     ) -> Result<()> {
         ensure!(depth <= 64, "strategy source nesting exceeds limit");
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
+        let fd = openat2(
+            directory,
+            if relative.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                relative
+            },
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+            ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_MAGICLINKS,
+        )?;
+        let capability_path = PathBuf::from(format!("/proc/self/fd/{}", fd.as_raw_fd()));
+        ensure!(
+            fs::symlink_metadata(capability_path.join("tradeclimb.db")).is_err(),
+            "private TC data directories cannot be strategy source"
+        );
+        for entry in fs::read_dir(&capability_path)? {
+            let name = entry?.file_name();
             *entries += 1;
             ensure!(*entries <= 20_000, "too many source entries");
-            let name = entry.file_name();
             if ["target", ".git", ".env", "var"].contains(&name.to_string_lossy().as_ref())
                 || name.to_string_lossy().starts_with(".env.")
             {
                 continue;
             }
-            let kind = entry.file_type()?;
-            ensure!(
-                !kind.is_symlink(),
-                "strategy source symlinks are not supported"
-            );
-            if kind.is_dir() {
-                visit(root, &entry.path(), out, total, depth + 1, entries)?;
-            } else {
-                ensure!(
-                    kind.is_file(),
-                    "strategy source must contain only regular files"
-                );
-                ensure!(out.len() < 10_000, "too many strategy source files");
-                let mut bytes = vec![];
-                fs::File::open(entry.path())?
-                    .take(10 * 1024 * 1024 + 1)
-                    .read_to_end(&mut bytes)?;
-                ensure!(bytes.len() <= 10 * 1024 * 1024, "source file too large");
-                *total += bytes.len();
-                ensure!(*total <= 104_857_600, "strategy source exceeds 100 MiB");
-                out.push((
-                    entry.path().strip_prefix(root)?.to_string_lossy().into(),
-                    bytes,
-                ));
+            let path = relative.join(name);
+            let opened = openat2(
+                directory,
+                &path,
+                OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                Mode::empty(),
+                ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_MAGICLINKS,
+            )?;
+            let file = fs::File::from(opened);
+            let metadata = file.metadata()?;
+            if metadata.is_dir() {
+                visit(directory, &path, out, total, entries, depth + 1)?;
+                continue;
             }
+            ensure!(
+                metadata.is_file(),
+                "strategy source must contain only regular files"
+            );
+            ensure!(out.len() < 10_000, "too many strategy source files");
+            let mut bytes = vec![];
+            file.take(10 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+            ensure!(bytes.len() <= 10 * 1024 * 1024, "source file too large");
+            *total += bytes.len();
+            ensure!(*total <= 104_857_600, "strategy source exceeds 100 MiB");
+            out.push((path.to_string_lossy().into(), bytes));
         }
         Ok(())
     }
-    visit(root, path, out, &mut 0, 0, &mut 0)
+    visit(&directory, Path::new(""), out, &mut 0, &mut 0, 0)
 }
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     if !source.exists() {

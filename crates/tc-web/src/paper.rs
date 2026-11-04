@@ -72,10 +72,22 @@ pub fn PaperPanel(
     snapshot: RwSignal<Value>,
 ) -> impl IntoView {
     let sessions = papers.clone();
-    view! {<section class="panel"><div class="panel-heading"><div><h2>"Paper portfolios"</h2><p>"Independent virtual capital · public Bitvavo data"</p></div></div>
+    let candidates = snapshot.with_untracked(|s| items(s, "paper_candidates"));
+    let mut strategies = strategies;
+    strategies.sort_by(|a, b| {
+        let score = |s: &Value| {
+            candidates
+                .iter()
+                .find(|c| c["strategy"] == s["id"])
+                .and_then(|c| c["sharpe"].as_f64())
+                .unwrap_or(f64::NEG_INFINITY)
+        };
+        score(b).total_cmp(&score(a))
+    });
+    view! {<section class="panel"><div class="panel-heading"><div><h2>"Paper portfolios"</h2><p>"Approve an eligible Bitvavo development evaluation to start paper trading. Maximum drawdown: 15%; growth aspiration: 15%. Candidates rank by Sharpe; validation risk is not certified by its scalar score."</p></div></div>
     <div class="paper-grid">{strategies.iter().filter(|s|s["archived"]!=true).map(|s|{
-        let id=text(s,"id");let existing=sessions.iter().any(|p|text(p,"strategy")==id && active(p));let key=format!("start:{id}");let disabled_key=key.clone();let label_key=key.clone();let name=text(&s["spec"],"name");let name_label=name.clone();
-        view!{<button class="secondary" data-strategy-id=id.clone() disabled=move||existing||pending.with(|keys|keys.contains(&disabled_key)) on:click=move|_|paper_action("/api/paper".into(),json!({"strategy":id}),key.clone(),status,pending,snapshot)>{move||if pending.with(|keys|keys.contains(&label_key)){format!("Starting {name_label}…")}else if existing{format!("{name_label} · active")}else{format!("Start {name_label}")}}</button>}
+        let id=text(s,"id");let candidate=candidates.iter().find(|c|c["strategy"]==id);let approval_job=candidate.map(|c|text(c,"job")).unwrap_or_default();let qualifies=candidate.is_some();let existing=sessions.iter().any(|p|text(p,"strategy")==id && active(p));let key=format!("start:{id}");let disabled_key=key.clone();let label_key=key.clone();let name=text(&s["spec"],"name");let name_label=name.clone();
+        view!{<button class="secondary" data-strategy-id=id.clone() disabled=move||!qualifies||existing||pending.with(|keys|keys.contains(&disabled_key)) on:click=move|_|paper_action("/api/paper".into(),json!({"strategy":id,"job":approval_job,"approve":true}),key.clone(),status,pending,snapshot)>{move||if pending.with(|keys|keys.contains(&label_key)){format!("Starting {name_label}…")}else if existing{format!("{name_label} · active")}else if !qualifies {format!("{name_label} · evaluation required")} else{format!("Approve {name_label}")}}</button>}
     }).collect_view()}</div>
     {if papers.is_empty(){view!{<div class="empty">"No paper portfolios yet. Start a strategy to follow live market observations."</div>}.into_any()}
     else{papers.into_iter().map(|p|{

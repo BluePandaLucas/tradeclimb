@@ -51,6 +51,13 @@ fn active(state: &str) -> bool {
 }
 impl Store {
     pub fn start_paper(&self, strategy: &str) -> Result<PaperSession> {
+        self.start_paper_recorded(strategy, None)
+    }
+    pub(super) fn start_paper_recorded(
+        &self,
+        strategy: &str,
+        approval: Option<Value>,
+    ) -> Result<PaperSession> {
         ensure!(
             !self.shutdown.load(std::sync::atomic::Ordering::Acquire),
             "service is shutting down"
@@ -87,6 +94,23 @@ impl Store {
             "INSERT INTO objects VALUES('paper',?1,?2)",
             params![session.id, serde_json::to_string(&session)?],
         )?;
+        if let Some(mut record) = approval {
+            record["owner_approved_at"] = json!(now());
+            record["session"] = json!(session.id);
+            tx.execute(
+                "INSERT INTO objects VALUES('paper_approval',?1,?2)",
+                params![session.id, serde_json::to_string(&record)?],
+            )?;
+            tx.execute(
+                "INSERT INTO objects VALUES('audit',?1,?2)",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    serde_json::to_string(
+                        &json!({"action":"owner_approved_paper","time":now(),"approval":record})
+                    )?
+                ],
+            )?;
+        }
         tx.commit()?;
         Ok(session)
     }

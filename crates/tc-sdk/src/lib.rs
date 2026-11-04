@@ -352,14 +352,16 @@ impl ModelClient for HttpModelClient {
         if let Some(path) = std::env::var_os("TC_MODEL_SOCKET") {
             return SocketModelClient { path: path.into() }.infer(request);
         }
-        let response = reqwest::blocking::Client::builder()
+        let mut call = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(35))
             .build()?
             .post(format!("{}/api/infer", self.base_url))
-            .json(&serde_json::json!({"scope": self.scope, "request": request}))
-            .send()?
-            .error_for_status()?
-            .json()?;
+            .json(&serde_json::json!({"scope":self.scope,"request":request}));
+        if let Some(path) = std::env::var_os("TC_API_TOKEN_FILE") {
+            let token = std::fs::read_to_string(path)?;
+            call = call.bearer_auth(token.trim());
+        }
+        let response = call.send()?.error_for_status()?.json()?;
         Ok(response)
     }
 }

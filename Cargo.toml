@@ -44,3 +44,6 @@ arrow-array = "60"
 arrow-schema = "60"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
+
+subtle = "2"
+rustix = { version = "1", features = ["fs"] }
