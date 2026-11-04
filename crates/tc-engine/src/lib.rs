@@ -25,6 +25,24 @@ pub struct Simulator {
     pub fills: Vec<Fill>,
     pub observed: BTreeMap<String, i64>,
 }
+// Per-run constants; public Simulator methods still honor mutable configuration.
+#[derive(Clone, Copy)]
+struct ExecutionCosts {
+    slip: Decimal,
+    fee: Decimal,
+    haircut: Decimal,
+}
+impl ExecutionCosts {
+    fn new(config: &RunConfig) -> Self {
+        let denominator = Decimal::from(10_000);
+        Self {
+            slip: Decimal::from(config.slippage_bps) / denominator,
+            fee: Decimal::from(config.fee_bps) / denominator,
+            haircut: Decimal::ONE
+                - Decimal::from(config.fee_bps + config.slippage_bps) / denominator,
+        }
+    }
+}
 impl Simulator {
     pub fn new(config: RunConfig) -> Result<Self> {
         config.validate()?;
@@ -47,8 +65,9 @@ impl Simulator {
         })
     }
     pub fn liquidation_equity(&self) -> Decimal {
-        let haircut = Decimal::ONE
-            - Decimal::from(self.config.fee_bps + self.config.slippage_bps) / Decimal::from(10_000);
+        self.liquidation_equity_with_haircut(ExecutionCosts::new(&self.config).haircut)
+    }
+    fn liquidation_equity_with_haircut(&self, haircut: Decimal) -> Decimal {
         self.portfolio.cash
             + self
                 .portfolio
@@ -68,8 +87,7 @@ impl Simulator {
     }
     pub fn queue(&mut self, intents: Vec<Intent>, time: i64) -> Result<()> {
         ensure!(intents.len() <= 5, "too many intents");
-        let mut weights = BTreeMap::new();
-        for intent in &intents {
+        for (index, intent) in intents.iter().enumerate() {
             ensure!(
                 self.config.rules.contains_key(&intent.market),
                 "unknown intent market"
@@ -79,14 +97,18 @@ impl Simulator {
                 "invalid target weight"
             );
             ensure!(
-                weights
-                    .insert(intent.market.clone(), intent.target_weight)
-                    .is_none(),
+                !intents[..index]
+                    .iter()
+                    .any(|other| other.market == intent.market),
                 "duplicate market intent"
             );
         }
         ensure!(
-            weights.values().copied().sum::<Decimal>() <= Decimal::ONE,
+            intents
+                .iter()
+                .map(|intent| intent.target_weight)
+                .sum::<Decimal>()
+                <= Decimal::ONE,
             "weights exceed portfolio capital"
         );
         for intent in intents {
@@ -108,6 +130,25 @@ impl Simulator {
         target: Decimal,
         reason: &str,
     ) -> Result<()> {
+        self.execute_with_costs(
+            market,
+            price,
+            time,
+            target,
+            reason,
+            ExecutionCosts::new(&self.config),
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn execute_with_costs(
+        &mut self,
+        market: &str,
+        price: Decimal,
+        time: i64,
+        target: Decimal,
+        reason: &str,
+        costs: ExecutionCosts,
+    ) -> Result<()> {
         ensure!(price > Decimal::ZERO, "nonpositive execution price");
         let rule = self
             .config
@@ -120,14 +161,14 @@ impl Simulator {
             .positions
             .get(market)
             .map_or(Decimal::ZERO, |p| p.quantity);
-        let desired = if self.halted {
+        let desired = if self.halted || target == Decimal::ZERO {
             Decimal::ZERO
         } else {
             self.gross_equity() * target / price
         };
         let delta = desired - held;
-        let slip = Decimal::from(self.config.slippage_bps) / Decimal::from(10_000);
-        let fee_rate = Decimal::from(self.config.fee_bps) / Decimal::from(10_000);
+        let slip = costs.slip;
+        let fee_rate = costs.fee;
         let (side, fill_price, quantity) = if delta > Decimal::ZERO {
             let p = price * (Decimal::ONE + slip);
             (
@@ -198,6 +239,14 @@ impl Simulator {
         Ok(())
     }
     pub fn open(&mut self, candles: &[Candle], time: i64) -> Result<()> {
+        self.open_with_costs(candles, time, ExecutionCosts::new(&self.config))
+    }
+    fn open_with_costs(
+        &mut self,
+        candles: &[Candle],
+        time: i64,
+        costs: ExecutionCosts,
+    ) -> Result<()> {
         self.stale |= self.portfolio.positions.values().any(|p| {
             p.quantity > Decimal::ZERO && time - p.observed_at > self.config.stale_after_ms
         });
@@ -207,39 +256,52 @@ impl Simulator {
                 p.observed_at = time;
             }
         }
-        let mut ready = Vec::new();
-        let pending = std::mem::take(&mut self.pending);
-        for p in pending {
-            if time - p.created > self.config.intent_ttl_ms {
-                continue;
-            }
+        // Keep the allocation for the next frame. Stable ordering still executes
+        // sells before buys and preserves the order of unready intents.
+        let mut pending = std::mem::take(&mut self.pending);
+        pending.retain(|p| time - p.created <= self.config.intent_ttl_ms);
+        let priority = |p: &Pending| {
             if time >= p.created
                 && candles
                     .iter()
                     .any(|c| c.market == p.intent.market && c.volume > Decimal::ZERO)
             {
-                ready.push(p);
+                u8::from(p.intent.target_weight > Decimal::ZERO)
             } else {
-                self.pending.push(p);
+                2
             }
-        }
-        ready.sort_by_key(|p| p.intent.target_weight > Decimal::ZERO);
-        for p in ready {
-            if let Some(c) = candles.iter().find(|c| c.market == p.intent.market) {
-                self.execute(
-                    &p.intent.market,
-                    c.open,
-                    time,
-                    p.intent.target_weight,
-                    if self.halted { "risk" } else { "signal" },
-                )?;
+        };
+        pending.sort_by_key(&priority);
+        let ready = pending.iter().take_while(|p| priority(p) < 2).count();
+        let result = (|| {
+            for p in &pending[..ready] {
+                if let Some(c) = candles.iter().find(|c| c.market == p.intent.market) {
+                    self.execute_with_costs(
+                        &p.intent.market,
+                        c.open,
+                        time,
+                        p.intent.target_weight,
+                        if self.halted { "risk" } else { "signal" },
+                        costs,
+                    )?;
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })();
+        pending.drain(..ready);
+        self.pending = pending;
+        result
     }
     pub fn mark(&mut self, candles: &[Candle], time: i64) -> Result<()> {
+        self.mark_with_haircut(candles, time, ExecutionCosts::new(&self.config).haircut)
+    }
+    fn mark_with_haircut(&mut self, candles: &[Candle], time: i64, haircut: Decimal) -> Result<()> {
         for c in candles {
-            self.observed.insert(c.market.clone(), time);
+            if let Some(observed) = self.observed.get_mut(&c.market) {
+                *observed = time;
+            } else {
+                self.observed.insert(c.market.clone(), time);
+            }
             if let Some(p) = self.portfolio.positions.get_mut(&c.market) {
                 p.price = c.close;
                 p.observed_at = time;
@@ -249,7 +311,7 @@ impl Simulator {
             p.quantity > Decimal::ZERO && time - p.observed_at > self.config.stale_after_ms
         });
         self.stale |= stale;
-        let value = self.liquidation_equity();
+        let value = self.liquidation_equity_with_haircut(haircut);
         self.peak = self.peak.max(value);
         let dd = if self.peak > Decimal::ZERO {
             number((self.peak - value) / self.peak)
@@ -356,37 +418,68 @@ pub fn backtest_with_observer(
     mut observer: impl FnMut(&Frame, &[Intent], &Simulator, Option<&str>) -> Result<()>,
 ) -> Result<Report> {
     let mut sim = Simulator::new(config)?;
+    let costs = ExecutionCosts::new(&sim.config);
     let mut index = 0;
     let mut previous = None;
+    let mut frame = Frame {
+        protocol: PROTOCOL,
+        time: 0,
+        candles: Vec::new(),
+        portfolio: sim.portfolio.clone(),
+        warmup: true,
+    };
     while index < candles.len() {
         let time = candles[index].time;
         ensure!(previous.is_none_or(|p| p <= time), "candles not ordered");
         previous = Some(time);
-        let end = index + candles[index..].partition_point(|c| c.time == time);
+        // Timestamp groups are small; scan adjacent rows rather than binary-searching
+        // the whole remaining history (and touching distant cache lines per frame).
+        let end = index
+            + candles[index..]
+                .iter()
+                .take_while(|c| c.time == time)
+                .count();
         let group = &candles[index..end];
         for c in group {
             c.validate()?;
         }
-        let mut unique = std::collections::BTreeSet::new();
-        ensure!(
-            group.iter().all(|c| unique.insert(&c.market)),
-            "duplicate candle"
-        );
+        // Validated candles can only contain the five supported markets.
+        let mut seen = 0_u8;
+        for c in group {
+            let market = MARKETS
+                .iter()
+                .position(|m| *m == c.market)
+                .ok_or_else(|| anyhow::anyhow!("unsupported market"))?;
+            let bit = 1 << market;
+            ensure!(seen & bit == 0, "duplicate candle");
+            seen |= bit;
+        }
         if time >= sim.config.end {
             break;
         }
         let warmup = time < sim.config.start;
         if !warmup {
-            sim.open(group, time)?;
-            sim.mark(group, time + MINUTE)?;
+            sim.open_with_costs(group, time, costs)?;
+            sim.mark_with_haircut(group, time + MINUTE, costs.haircut)?;
         }
-        let frame = Frame {
-            protocol: PROTOCOL,
-            time: time + MINUTE,
-            candles: group.to_vec(),
-            portfolio: sim.portfolio.clone(),
-            warmup,
-        };
+        frame.time = time + MINUTE;
+        group.clone_into(&mut frame.candles);
+        frame.portfolio.cash = sim.portfolio.cash;
+        frame
+            .portfolio
+            .positions
+            .retain(|market, _| sim.portfolio.positions.contains_key(market));
+        for (market, position) in &sim.portfolio.positions {
+            if let Some(cached) = frame.portfolio.positions.get_mut(market) {
+                cached.clone_from(position);
+            } else {
+                frame
+                    .portfolio
+                    .positions
+                    .insert(market.clone(), position.clone());
+            }
+        }
+        frame.warmup = warmup;
         let intents = match strategy.on_frame(&frame) {
             Ok(v) => v,
             Err(error) => {
@@ -844,6 +937,145 @@ mod tests {
             kind: StrategyKind::BuyHold,
             markets: vec!["BTC-EUR".into()],
         }
+    }
+    #[test]
+    fn cached_backtest_matches_public_simulator_with_fresh_frames() {
+        let mut data = Vec::new();
+        for minute in 0..40 {
+            for (index, market) in MARKETS.iter().enumerate() {
+                if minute % 7 == 0 && index == 2 {
+                    continue;
+                }
+                let mut c = candle(minute * MINUTE, 100 + (minute % 9 - 4).abs());
+                c.market = (*market).into();
+                if minute % 11 == 0 {
+                    c.volume = Decimal::ZERO;
+                }
+                data.push(c);
+            }
+        }
+        let mut spec = spec();
+        spec.markets = MARKETS.iter().map(|m| (*m).into()).collect();
+        spec.kind = StrategyKind::MovingAverage { fast: 2, slow: 3 };
+        let mut config = RunConfig::new(4 * MINUTE, 40 * MINUTE);
+        config.fee_bps = 37;
+        config.slippage_bps = 19;
+        config.max_drawdown = 1.0;
+        let mut reference = Simulator::new(config.clone()).unwrap();
+        let mut strategy = tc_sdk::Builtin::new(&spec).unwrap();
+        let mut expected_frames = Vec::new();
+        let mut start = 0;
+        while start < data.len() {
+            let time = data[start].time;
+            let end = start + data[start..].iter().take_while(|c| c.time == time).count();
+            let group = &data[start..end];
+            let warmup = time < config.start;
+            if !warmup {
+                reference.open(group, time).unwrap();
+                reference.mark(group, time + MINUTE).unwrap();
+            }
+            let frame = Frame {
+                protocol: PROTOCOL,
+                time: time + MINUTE,
+                candles: group.to_vec(),
+                portfolio: reference.portfolio.clone(),
+                warmup,
+            };
+            let intents = strategy.on_frame(&frame).unwrap();
+            if !warmup {
+                reference.queue(intents.clone(), time + MINUTE).unwrap();
+            }
+            expected_frames.push(serde_json::to_value((&frame, &intents, &reference)).unwrap());
+            start = end;
+        }
+        let expected = reference.finish().unwrap();
+        let mut observed = Vec::new();
+        let actual = backtest_with_observer(
+            &data,
+            config,
+            &mut tc_sdk::Builtin::new(&spec).unwrap(),
+            |_, _, _| Ok(()),
+            |frame, intents, sim, error| {
+                assert!(error.is_none());
+                observed.push(serde_json::to_value((frame, intents, sim)).unwrap());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(observed, expected_frames);
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+    #[test]
+    fn grouping_rejects_duplicates_unsupported_and_unordered_candles() {
+        for (data, message) in [
+            (vec![candle(0, 100), candle(0, 100)], "duplicate candle"),
+            (
+                vec![candle(MINUTE, 100), candle(0, 100)],
+                "candles not ordered",
+            ),
+            (
+                {
+                    let mut c = candle(0, 100);
+                    c.market = "UNKNOWN".into();
+                    vec![c]
+                },
+                "unsupported market",
+            ),
+        ] {
+            let error = backtest(
+                &data,
+                RunConfig::new(0, 3 * MINUTE),
+                &mut tc_sdk::Builtin::new(&spec()).unwrap(),
+                |_, _, _| Ok(()),
+            )
+            .unwrap_err();
+            assert_eq!(error.to_string(), message);
+        }
+    }
+    #[test]
+    fn pending_orders_preserve_sell_priority_expiry_and_unready_order() {
+        let mut config = RunConfig::new(0, 5 * MINUTE);
+        config.fee_bps = 0;
+        config.slippage_bps = 0;
+        config.intent_ttl_ms = MINUTE;
+        let mut sim = Simulator::new(config).unwrap();
+        sim.execute("BTC-EUR", 100.into(), 0, Decimal::ONE, "signal")
+            .unwrap();
+        let pending = |market: &str, target, created| Pending {
+            intent: Intent {
+                market: market.into(),
+                target_weight: target,
+            },
+            created,
+        };
+        sim.pending = vec![
+            pending("ETH-EUR", Decimal::ONE, MINUTE),
+            pending("SOL-EUR", Decimal::ZERO, MINUTE),
+            pending("BTC-EUR", Decimal::ZERO, MINUTE),
+            pending("XRP-EUR", Decimal::ZERO, 0),
+            pending("ADA-EUR", Decimal::ZERO, 3 * MINUTE),
+        ];
+        let mut eth = candle(2 * MINUTE, 100);
+        eth.market = "ETH-EUR".into();
+        sim.open(&[candle(2 * MINUTE, 100), eth], 2 * MINUTE)
+            .unwrap();
+        assert_eq!(sim.fills[1].market, "BTC-EUR");
+        assert_eq!(sim.fills[1].side, Side::Sell);
+        assert_eq!(sim.fills[2].market, "ETH-EUR");
+        assert_eq!(
+            sim.pending
+                .iter()
+                .map(|p| p.intent.market.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SOL-EUR", "ADA-EUR"]
+        );
+        // Public methods must compute costs from the current configuration.
+        sim.config.fee_bps = 100;
+        let equity = sim.liquidation_equity();
+        assert_eq!(equity, Decimal::from(9900));
     }
     #[test]
     fn fees_are_exact_and_signal_fills_next_bar() {

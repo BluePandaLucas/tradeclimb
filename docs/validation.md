@@ -47,3 +47,38 @@ The original [Bitvavo data audit](data-audit.json) records 9,489,303 candles and
 A native 20/100 moving-average throughput fixture processed the full Bitvavo snapshot in 10.8 seconds wall time, including verified loading, with 1.69 GiB peak child RSS on a Ryzen 7 5800X and warm caches. Compilation/import were excluded and risk halting disabled to exercise the full window. It emitted no financial feedback. [Exact measurement](performance.json). External IPC/model strategies have different costs.
 
 The original three-minute [paper soak](paper-soak.json) crossed two candle boundaries and recorded two virtual fills without errors. The [forward-book probe](v2-forward-books-audit.json) demonstrates bounded collection, not calibrated execution costs. The [engine decision](decisions/0001-engine.md) records the NautilusTrader/Barter reference investigation; it does not establish numerical equivalence to TC.
+
+## Fixed backtest performance comparison (2026-11-04)
+
+The frozen demo in `crates/tc-engine/examples/performance.rs` runs a 20/100 moving-average crossover on five markets, over 100,000 synthetic minutes (500,000 candles), three full backtests per process. It includes 100 minutes of indicator warmup and disables drawdown halting so both versions execute the same history. The demo and SDK strategy remain unchanged from baseline commit `b490b17`.
+
+The engine now scans adjacent timestamp groups, validates duplicates without allocating trees, reuses frame/portfolio and pending-order storage, and computes decimal execution costs once per backtest. Decimal accounting, validation, sell-before-buy ordering, observer timing and public simulator configuration updates remain covered by regressions.
+
+The [raw paired measurements](backtest-performance.json) include every sample and executable/workload SHA-256 hashes. One unmeasured warmup process per executable precedes seven pairs of fresh processes, alternating order. Both builds use the same locked Rust 1.99.1 release profile on Linux x86_64 / Intel Core i5-6500T. Compilation and dataset downloads are excluded. Simulation time covers the complete engine call including report metrics; total wall time additionally includes process startup, fixture generation, and full report serialization/hashing. Average process CPU utilization is `(user + system CPU seconds) / wall seconds`, where 100% is one core; memory is GNU time's peak process RSS. This is a native in-process benchmark, without external strategy IPC, inference, storage loading, or UI work.
+
+Every measured run must produce the same SHA-256 of the complete serialized report (config, every equity point and fill, and metrics). The comparison script fails unless median simulation **and** total process wall times fall by at least 25%, and median CPU utilization and peak RSS each stay within 110% of baseline. These measurements establish performance for this fixed synthetic workload, not financial performance or a speed guarantee for every strategy.
+
+Seven-pair medians:
+
+| Measure | Baseline | Optimized | Relative change |
+| --- | ---: | ---: | ---: |
+| Simulation time | 1.9084 s | 1.2796 s | −32.95% |
+| Total process wall time | 2.2351 s | 1.6043 s | −28.22% |
+| Process CPU utilization | 99.483% | 99.222% | −0.26% |
+| Peak process RSS | 92.508 MiB | 92.594 MiB | +0.09% |
+| Process CPU time | 2.23 s | 1.59 s | −28.70% |
+
+Reproduce without changing the active checkout:
+
+```bash
+baseline_dir=$(mktemp -d)
+git archive b490b17 | tar -x -C "$baseline_dir"
+CARGO_TARGET_DIR="$PWD/target/perf-baseline" cargo build --locked --release \
+  --manifest-path "$baseline_dir/Cargo.toml" -p tc-engine --example performance
+cargo build --locked --release -p tc-engine --example performance
+python3 scripts/compare-backtests.py \
+  target/perf-baseline/release/examples/performance \
+  target/release/examples/performance --output target/backtest-comparison.json
+```
+
+Validation: native workspace tests (78 passed, nine explicitly ignored sandbox/helper tests), release engine tests, engine Clippy across all targets with warnings denied, formatting, and Python syntax checks passed.
