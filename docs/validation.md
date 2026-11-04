@@ -6,7 +6,7 @@ Tests establish platform behavior, not a profitable trading strategy. Synthetic 
 
 The portable Rust suite covers accounting/costs, next-bar decisions, risk breaches, causal indicators/resampling, bounded IPC, immutable data checksums, persistence/cancellation races, shared validation budgets, objective compatibility, Sharpe/benchmark formulae and undefined cases, owner disclosure, reserved-window filtering, inference scope limits and atomic paper recovery.
 
-Agent-tool regressions additionally cover source/path limits, credential-scoped idempotency and revocation, fixture-only preflight inference, development-only candle/trace boundaries, pruning unrelated data partitions, trace truncation and invalid decisions, and unchanged reports with tracing enabled.
+Agent-tool regressions additionally cover source/path limits, credential-scoped idempotency and revocation, fixture-only preflight inference, bounded custom synthetic behavior suites with retained failed-admission evidence, development-only candle/trace boundaries, pruning unrelated data partitions, trace truncation and invalid decisions, and unchanged reports with tracing enabled.
 
 `./scripts/check` runs formatting, native/WASM Clippy with warnings denied, portable tests and release browser compilation. `cargo deny check` separately checks advisories, licenses, sources and dependency versions. Its narrow transitive `paste` exception is documented in `deny.toml`.
 

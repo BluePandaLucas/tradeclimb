@@ -128,6 +128,7 @@ class Client:
         markets=None,
         fixtures=None,
         key=None,
+        synthetic_suite=None,
     ):
         root = pathlib.Path(project)
         platform = json.loads((root / ".tc-agent.json").read_text())["platform"]
@@ -141,6 +142,8 @@ class Client:
             "files": read_source(root),
             "model_fixtures": fixtures or {},
         }
+        if synthetic_suite is not None:
+            body["synthetic_suite"] = synthetic_suite
         body["idempotency_key"] = (
             key
             or "source-"
@@ -263,6 +266,7 @@ def main():
     p.add_argument("--parameters", default="{}")
     p.add_argument("--markets", nargs="+", default=["BTC-EUR"])
     p.add_argument("--model-fixtures", default="{}")
+    p.add_argument("--synthetic-suite", help="Path to a versioned synthetic scenario JSON file")
     p.add_argument("--key")
     p.add_argument("--wait", action="store_true")
     for name in [
@@ -311,6 +315,7 @@ def main():
             args.markets,
             json.loads(args.model_fixtures),
             args.key,
+            json.loads(pathlib.Path(args.synthetic_suite).read_text()) if args.synthetic_suite else None,
         )
         if args.wait:
             result = client.wait("candidate", result["id"])

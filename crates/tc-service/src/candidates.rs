@@ -1,6 +1,7 @@
 //! Pinned source admission: source is data until the offline build sandbox starts.
 use super::*;
 use std::collections::BTreeMap;
+pub mod synthetic;
 const MANIFEST: &str = include_str!("../../../examples/strategy/Cargo.toml");
 const LOCK: &str = include_str!("../../../examples/strategy/Cargo.lock");
 const EXAMPLE: &str = include_str!("../../../examples/strategy/src/main.rs");
@@ -21,6 +22,8 @@ pub struct CandidateInput {
     pub files: BTreeMap<String, String>,
     #[serde(default)]
     pub model_fixtures: BTreeMap<String, String>,
+    #[serde(default)]
+    pub synthetic_suite: Option<synthetic::Suite>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Candidate {
@@ -109,6 +112,10 @@ pub fn kit(store: &Store) -> Result<Value> {
     }
 
     files.insert(
+        "synthetic-tests.md".into(),
+        include_str!("../../../docs/synthetic-tests.md").into(),
+    );
+    files.insert(
         "tc_agent.py".into(),
         include_str!("../../../scripts/tc_agent.py").into(),
     );
@@ -167,6 +174,9 @@ fn validate(input: &CandidateInput) -> Result<StrategySpec> {
         },
     };
     spec.validate()?;
+    if let Some(suite) = &input.synthetic_suite {
+        suite.validate(&input.markets)?;
+    }
     Ok(spec)
 }
 fn active(tx: &rusqlite::Transaction<'_>, agent: Option<&str>) -> Result<()> {
@@ -185,7 +195,7 @@ pub fn submit(store: &Store, input: CandidateInput, agent: Option<&str>) -> Resu
     if let Some(parent) = &input.parent {
         let _: RegisteredStrategy = store.get("strategy", parent)?;
     }
-    let fingerprint = digest(&serde_json::to_vec(&(
+    let mut fingerprint = digest(&serde_json::to_vec(&(
         &input.platform,
         &input.name,
         &input.description,
@@ -195,6 +205,9 @@ pub fn submit(store: &Store, input: CandidateInput, agent: Option<&str>) -> Resu
         &input.files,
         &input.model_fixtures,
     ))?);
+    if let Some(suite) = &input.synthetic_suite {
+        fingerprint = digest(&serde_json::to_vec(&(&fingerprint, suite))?);
+    }
     let key = digest(&serde_json::to_vec(&(
         agent.unwrap_or("owner"),
         &input.idempotency_key,
@@ -239,7 +252,7 @@ pub fn submit(store: &Store, input: CandidateInput, agent: Option<&str>) -> Resu
         updated_at: now(),
         strategy: None,
         diagnostic: None,
-        preflight: None,
+        preflight: Some(evidence(&input)?),
     };
     save_json(
         &store
@@ -302,7 +315,7 @@ fn synthetic_fixture(gaps: bool) -> Result<(RunConfig, Vec<Candle>)> {
         .collect();
     Ok((config, candles))
 }
-fn preflight(
+fn standard_preflight(
     store: &Store,
     spec: &StrategySpec,
     fixtures: &BTreeMap<String, String>,
@@ -344,6 +357,62 @@ fn preflight(
         json!({"version":"synthetic-contract-v1","passed":true,"cases":cases,"model_calls":"fixtures only; no provider access","performance_evidence":false}),
     )
 }
+fn evidence(input: &CandidateInput) -> Result<Value> {
+    Ok(
+        json!({"version":"synthetic-behavior-v1","synthetic":true,"performance_evidence":false,
+        "passed":false,"status":"not_run","platform":input.platform,
+        "source_hash":digest(&serde_json::to_vec(&input.files)?),
+        "parameters_hash":digest(&serde_json::to_vec(&input.parameters)?),
+        "markets":input.markets,
+        "model_fixtures_hash":digest(&serde_json::to_vec(&input.model_fixtures)?),
+        "scenario_suite_hash":digest(&serde_json::to_vec(&input.synthetic_suite)?),
+        "execution_hash":digest(&serde_json::to_vec(&(include_str!("../../../crates/tc-engine/src/lib.rs"), include_str!("candidates/synthetic.rs"), include_str!("candidates.rs")))?),
+        "strategy":null,"standard":null,"custom":null}),
+    )
+}
+fn preflight(
+    store: &Store,
+    spec: &StrategySpec,
+    input: &CandidateInput,
+    c: &mut Candidate,
+) -> Result<()> {
+    let mut report = evidence(input)?;
+    if let StrategyKind::Executable { path } = &spec.kind {
+        report["executable_hash"] = json!(digest(&fs::read(path)?));
+    }
+    report["status"] = json!("running");
+    c.preflight = Some(report.clone());
+    update(store, c)?;
+    let standard = standard_preflight(store, spec, &input.model_fixtures);
+    report["standard"] = match standard {
+        Ok(value) => value,
+        Err(error) => {
+            json!({"passed":false,"error":error.to_string().chars().take(2000).collect::<String>()})
+        }
+    };
+    // Custom expectations never replace the mandatory protocol/replay checks.
+    if let Some(suite) = &input.synthetic_suite {
+        report["custom"] = match synthetic::run(store, spec, &input.model_fixtures, suite) {
+            Ok(value) => value,
+            Err(error) => {
+                json!({"passed":false,"error":error.to_string().chars().take(2000).collect::<String>()})
+            }
+        };
+    }
+    let passed = report["standard"]["passed"] == true
+        && (input.synthetic_suite.is_none() || report["custom"]["passed"] == true);
+    report["passed"] = json!(passed);
+    report["status"] = json!("completed");
+    // Preserve the original standard-preflight cases for existing clients.
+    report["cases"] = report["standard"]["cases"].clone();
+    c.preflight = Some(report);
+    update(store, c)?;
+    ensure!(
+        passed,
+        "synthetic preflight failed; inspect preflight evidence"
+    );
+    Ok(())
+}
 pub fn worker(root: &Path, id: &str) -> Result<()> {
     let store = Store::open(root)?;
     let mut c: Candidate = store.get("candidate", id)?;
@@ -375,7 +444,7 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
         spec.kind = StrategyKind::Executable {
             path: artifact.to_string_lossy().into(),
         };
-        c.preflight = Some(preflight(&store, &spec, &input.model_fixtures)?);
+        preflight(&store, &spec, &input, &mut c)?;
         let registered = store.retain_strategy(spec, input.parent, Some(&project))?;
         let mut db = store.db()?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -390,6 +459,9 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
             "INSERT OR IGNORE INTO objects VALUES('strategy',?1,?2)",
             params![registered.id, serde_json::to_string(&registered)?],
         )?;
+        if let Some(report) = &mut c.preflight {
+            report["strategy"] = json!(&registered.id);
+        }
         c.strategy = Some(registered.id);
         c.state = "completed".into();
         c.updated_at = now();
@@ -528,6 +600,7 @@ mod tests {
             markets: vec!["BTC-EUR".into()],
             files: BTreeMap::from([("src/main.rs".into(), EXAMPLE.into())]),
             model_fixtures: BTreeMap::new(),
+            synthetic_suite: None,
         }
     }
     #[test]
@@ -601,6 +674,31 @@ mod tests {
             .files
             .insert("src/main.rs".into(), "fn main() {}".into());
         assert!(submit(&store, changed, Some(a)).is_err());
+        let mut changed = input();
+        let (config, candles) = synthetic_fixture(false)?;
+        let candles = candles
+            .into_iter()
+            .filter(|c| c.market == "BTC-EUR")
+            .collect();
+        let assertion_time = config.start;
+        changed.synthetic_suite = Some(synthetic::Suite {
+            version: 1,
+            scenarios: vec![synthetic::Scenario {
+                name: "behavior".into(),
+                config,
+                candles,
+                assertions: vec![synthetic::Assertion::FramePresent {
+                    time: assertion_time,
+                    present: true,
+                }],
+            }],
+        });
+        assert!(
+            submit(&store, changed, Some(a))
+                .unwrap_err()
+                .to_string()
+                .contains("idempotency key")
+        );
         auth::revoke_agent(&store, a)?;
         assert_eq!(get(&store, &c.id, Some(a))?.state, "cancelled");
         let db = store.db()?;

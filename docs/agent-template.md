@@ -2,7 +2,7 @@
 
 Read `tc_agent.py capabilities` before changing code. This kit pins the public SDK, compiler version and dependency lock. Edit only `src/**/*.rs`; the service supplies its own trusted manifest, SDK and lockfile. Custom dependencies, manifests, build scripts and arbitrary shell commands are not accepted by candidate admission.
 
-`fixtures/regular.json` and `fixtures/gapped.json` contain the exact synthetic candle/config inputs used by server preflight. They are debugging examples, not market data or performance evidence.
+`fixtures/regular.json` and `fixtures/gapped.json` contain the exact synthetic candle/config inputs used by server preflight. They are debugging examples, not market data or performance evidence. Optional `--synthetic-suite suite.json` adds declarative behavior assertions; see `synthetic-tests.md` in this kit for the versioned schema, timing, limits and example. Standard preflight always runs.
 
 ## Development loop
 

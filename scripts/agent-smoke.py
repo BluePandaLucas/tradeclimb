@@ -194,6 +194,63 @@ with tempfile.TemporaryDirectory(prefix="tc-agent-tools-") as folder:
             and not first["preflight"]["performance_evidence"]
         )
         strategy = first["strategy"]
+        print("checking custom synthetic behavior suites", flush=True)
+        fixture = json.loads((project / "fixtures/regular.json").read_text())
+        config = fixture["config"]
+        config.update(start=60000, end=300000)
+        suite = {"version": 1, "scenarios": [{
+            "name": "half-btc-with-gap", "config": config,
+            "candles": [dict(market="BTC-EUR", time=t, open="100", high="100", low="100", close="100", volume="1000") for t in [0, 60000, 180000, 240000]],
+            "assertions": [
+                {"kind": "no_intents", "start": 0, "end": 120000},
+                {"kind": "intent", "time": 120000, "market": "BTC-EUR", "target_weight": "0.5"},
+                {"kind": "frame_present", "time": 180000, "present": False},
+                {"kind": "fill_count", "start": 120000, "end": 240000, "market": "BTC-EUR", "side": "buy", "count": 1},
+                {"kind": "portfolio_weight", "time": 240000, "market": "BTC-EUR", "weight": "0.5", "tolerance": "0.01"},
+            ],
+        }]}
+        custom = client.submit(project, "Custom fixture", synthetic_suite=suite)
+        assert client.submit(project, "Custom fixture", synthetic_suite=suite)["id"] == custom["id"]
+        custom = client.wait("candidate", custom["id"])
+        assert custom["state"] == "completed", custom
+        evidence = custom["preflight"]
+        assert evidence["custom"]["passed"] and evidence["standard"]["passed"], custom
+        assert evidence["strategy"] == custom["strategy"]
+        assert evidence["source_hash"] == first["preflight"]["source_hash"]
+        assert evidence["scenario_suite_hash"] != first["preflight"]["scenario_suite_hash"]
+        suite["scenarios"][0]["assertions"][1]["target_weight"] = "1"
+        rejected = client.submit(project, "Custom fixture", synthetic_suite=suite)
+        assert rejected["id"] != custom["id"]
+        rejected = client.wait("candidate", rejected["id"])
+        assert rejected["state"] == "failed" and rejected["strategy"] is None, rejected
+        assert rejected["diagnostic"]["code"] == "preflight_failed", rejected
+        result = rejected["preflight"]["custom"]["cases"][0]["assertions"][1]
+        assert not result["passed"] and result["expected"] == "1" and result["observed"] == "0.5", result
+        assert rejected["preflight"]["standard"]["passed"]
+        assert rejected["preflight"]["source_hash"] == evidence["source_hash"]
+        assert rejected["preflight"]["scenario_suite_hash"] != evidence["scenario_suite_hash"]
+        # A custom-only runtime failure must fail admission even if a zero-fill assertion passes.
+        (project / "src/main.rs").write_text(source.replace(
+            '        if frame.warmup',
+            '        if frame.time == 120000 { anyhow::bail!("synthetic runtime failure"); }\n        if frame.warmup',
+        ))
+        runtime_suite = json.loads(json.dumps(suite))
+        runtime_suite["scenarios"][0]["assertions"] = [
+            {"kind": "no_intents", "start": 0, "end": 120000},
+            {"kind": "fill_count", "start": 0, "end": 120000,
+             "market": "BTC-EUR", "side": None, "count": 0},
+        ]
+        runtime = client.wait("candidate", client.submit(
+            project, "Custom runtime failure", synthetic_suite=runtime_suite
+        )["id"])
+        assert runtime["state"] == "failed" and runtime["strategy"] is None, runtime
+        case = runtime["preflight"]["custom"]["cases"][0]
+        assert not case["passed"] and any(case["errors"]), runtime
+        assert all(a["passed"] for a in case["assertions"]), case
+        assert runtime["preflight"]["standard"]["passed"]
+        (project / "src/main.rs").write_text(source + "\n/*" + "fixture " * 7000 + "*/\n")
+        with sqlite3.connect(data / "tradeclimb.db") as db:
+            assert db.execute("select used, revealed from ledger").fetchone() == (0, 0)
         trace_request = {"start": start, "end": start + 10 * minute, "max_frames": 3}
         job = client.run(strategy, campaign["id"], trace=trace_request)
         assert (
@@ -288,6 +345,8 @@ with tempfile.TemporaryDirectory(prefix="tc-agent-tools-") as folder:
             and invalid["diagnostic"]["code"] == "compile_failed"
         ), invalid
         assert "src/main.rs" in invalid["diagnostic"]["log"]
+        assert invalid["preflight"]["status"] == "not_run"
+        assert invalid["preflight"]["source_hash"]
         (project / "src/main.rs").write_text(
             source.replace("Decimal::new(5, 1)", "Decimal::new(2, 0)")
         )
@@ -429,8 +488,8 @@ with tempfile.TemporaryDirectory(prefix="tc-agent-tools-") as folder:
                 for row in db.execute("select data from objects where kind='strategy'")
             ]
             assert (
-                len(strategies) == 5
-            )  # Three demo versions and two admitted candidates.
+                len(strategies) == 6
+            )  # Three demo versions and three admitted candidates.
             revision = next(s for s in strategies if s["id"] == revised["strategy"])
             assert revision["parent"] == strategy
             assert (
