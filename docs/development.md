@@ -1,60 +1,52 @@
-# TradeClimb development setup
+# Development
 
-Use Rust 1.99.1 through rustup. This is the stable patch release published on 15 October 2026; the exact version is pinned in the root `rust-toolchain.toml`. Cargo ships with the toolchain and does not require a separate installation. Source: [Rust release announcement](https://blog.rust-lang.org/2026/10/15/Rust-1.99.1/).
-
-For a fresh Linux installation, use the official installer:
+The repository pins Rust 1.99.1 in `rust-toolchain.toml`. Install rustup using the [official instructions](https://rust-lang.org/install), then install the pinned components:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/tradeclimb-rustup-init.sh
-sh /tmp/tradeclimb-rustup-init.sh -y --profile minimal --default-toolchain 1.99.1 --component rustfmt --component clippy --target wasm32-unknown-unknown
-rm /tmp/tradeclimb-rustup-init.sh
-source "$HOME/.cargo/env"
+rustup toolchain install 1.99.1 --profile minimal \
+  --component rustfmt --component clippy --target wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.130 --locked
+cargo install cargo-deny --locked
 ```
 
-If rustup is already installed:
+Native builds need a C compiler/linker. Browser packaging requires the wasm-bindgen CLI version in Cargo.lock. External strategy tests additionally require the [Linux sandbox setup](operations.md#strategy-isolation).
+
+## Checks
 
 ```bash
-rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+./scripts/check
+cargo deny check
+cargo build --locked --release --bin tc
+cargo build --manifest-path examples/strategy/Cargo.toml --release --locked
+./scripts/build-web
+python3 scripts/smoke.py
+python3 scripts/evaluation-smoke.py
+python3 scripts/kraken-smoke.py
+./scripts/check-sandbox
+python3 scripts/security-smoke.py --agent-account tc-agent
+python3 scripts/agent-smoke.py --agent-account tc-agent
+python3 scripts/shutdown-smoke.py
 ```
 
-The repository pin selects the toolchain inside this directory without changing an existing user's global default. Verify it from the project root:
+`check` covers formatting, native/WASM linting, portable tests and release browser compilation. `check-sandbox` runs adversarial confinement/resource tests. Provision the locked agent account with `scripts/setup-agent TEMP_DATA_DIRECTORY` before separate-account checks; do not rotate a live research credential for QA. Without `--agent-account`, the two Python suites still test scoped API behavior but omit the separate-UID launcher check.
 
-```bash
-rustc --version
-cargo --version
-cargo fmt --version
-cargo clippy --version
-rustup target list --installed
-```
+The agent suite uses a temporary synthetic workspace to test real offline candidate builds, deterministic preflight, development data/traces, diagnostics, lineage, cancellation, revocation and restart. All smoke suites use disposable ledgers. `smoke.py --live` additionally observes public paper quotes and recovery without real orders. Live checks require network access and can depend on exchange availability.
 
-The WASM target supports the planned Rust browser UI. Native builds also require a C compiler/linker; dependencies may later require additional system development packages. The current machine has `cc` and `pkg-config` available.
+## Browser QA
 
-The Cargo workspace and shared checks are established. Run `./scripts/check` for native/WASM formatting, linting, tests, and browser release compilation. Run `cargo deny check` for advisory/license/dependency checks. Install its checker with `cargo install cargo-deny --locked`. Browser packaging additionally requires `cargo install wasm-bindgen-cli --version 0.2.130 --locked`; the version must match Cargo.lock. Source: [official installation guidance](https://rust-lang.org/install).
-
-
-Optional browser QA uses an isolated Python environment and does not add Node or Python dependencies to the application:
+Optional Playwright tooling is isolated from application dependencies:
 
 ```bash
 python3 -m venv .venv-qa
 .venv-qa/bin/pip install playwright
 .venv-qa/bin/playwright install chromium
 .venv-qa/bin/python scripts/browser-smoke.py
+.venv-qa/bin/python scripts/browser-backlog.py
+.venv-qa/bin/python scripts/browser-research.py
 ```
 
-Build the release CLI and browser assets first. The check runs Chromium headlessly against a temporary synthetic workspace, verifies streaming controls/charts/navigation and mobile width, and stops its server. No exchange orders are sent.
+Build the release CLI and browser assets first. The suites cover desktop/mobile controls, theme/streaming, strategy selection, thousands of history rows, benchmark charts and explicit owner validation disclosure. Each starts and stops its own synthetic service.
 
+For manual backlog inspection, `python3 scripts/ui-demo.py` creates a fresh synthetic `var/ui-backlog` directory. Start it with `target/release/tc --data-dir var/ui-backlog serve --bind 127.0.0.1:8088 --assets dist`. Sign in using that directory's owner key (`tc --data-dir var/ui-backlog auth status`). Seeded extra rows have no fabricated performance results.
 
-For a large, isolated UI demo (4,800 additional versions, 2,000 navigation-only backtests, and 240 tuning runs):
-
-```bash
-./scripts/build-web
-cargo build --locked --release --bin tc
-python3 scripts/ui-demo.py
-./target/release/tc --data-dir var/ui-backlog serve --bind 127.0.0.1:8088 --assets dist
-```
-
-The V2 interface requires owner sign-in; locate the private key with `target/release/tc --data-dir var/ui-backlog auth status`. The seed command requires a fresh directory and never overwrites an existing workspace. All data is synthetic; backlog rows have no performance results. The original three demo evaluations run normally and provide inspectable charts. Open the strategy picker to search families and exact versions. New backtests wait behind “Show new runs” so the current page stays in place. Run `scripts/browser-backlog.py` with the optional Playwright environment to check growing backlogs, keyboard focus, old-run search, both themes, and mobile layout.
-
-The browser loads a lightweight run index once and keeps the live feed bounded to 50 runs. DOM pagination bounds rendering; the strategy and run indexes remain in browser memory, so very large workspaces beyond the tested thousands will eventually need server-side search/pagination.
-
-`python scripts/browser-research.py` in the Playwright environment verifies solid translucent references, dense-marker suppression, benchmark diagnostics, explicit owner validation disclosure, unchanged query usage, agent restrictions after disclosure, and archived/empty picker states using temporary synthetic fixtures.
+The browser keeps strategy and lightweight run indexes in memory and bounds DOM rendering with pagination. Workspaces far larger than the tested thousands will need server-side search/pagination.

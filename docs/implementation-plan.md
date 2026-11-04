@@ -1,6 +1,8 @@
 # TradeClimb v1 implementation plan
 
-Status: recommendations accepted on 3 November 2026, with the model-knowledge policy adjusted below. V1 implementation is underway; use the operations and API guides for the current runnable behavior. See [research](research.md) for sources and [self-review](self-review.md) for remaining risks.
+Historical V1 planning record. Current behavior and policy are documented in [V2 status](v2.md), [operations](operations.md) and [API](api.md); later decisions supersede proposals here.
+
+Recommendations accepted on 3 November 2026, with the model-knowledge policy adjusted below. See [research](research.md) for sources and [self-review](self-review.md) for the original risks.
 
 ## Complete v1 workflow
 

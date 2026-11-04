@@ -13,7 +13,7 @@ cargo run --locked --release --bin tc -- demo
 ./scripts/start
 ```
 
-Open **http://127.0.0.1:8080**. This development checkout also has an isolated prepared demo: run `TC_DATA_DIR=var/demo ./scripts/start` to inspect it without mixing synthetic runs into the main research directory. Sign in with the private owner key located by `target/release/tc auth status`. API access requires an owner session or a scoped agent credential. The service binds to loopback; use an HTTPS reverse proxy for remote access. External strategies now require the local Linux Bubblewrap/systemd sandbox. Run `target/release/tc sandbox-check` to verify prerequisites; see [isolation setup and limits](docs/operations.md#strategy-isolation).
+Open **http://127.0.0.1:8080**. Sign in with the private owner key located by `target/release/tc auth status`. API access requires an owner session or a scoped agent credential. The service binds to loopback; use an HTTPS reverse proxy for remote access. External strategies now require the local Linux Bubblewrap/systemd sandbox. Run `target/release/tc sandbox-check` to verify prerequisites; see [isolation setup and limits](docs/operations.md#strategy-isolation).
 
 The interface follows your system theme. Use the header toggle for a remembered light/dark preference, or **System** to follow the OS again. Stop the service with **Ctrl+C**, or type **q** or **exit** and press Enter in its terminal.
 
@@ -28,32 +28,20 @@ cargo deny check
 ./scripts/check-sandbox
 ```
 
-Checks cover formatting, native and WASM Clippy with warnings denied, domain/protocol/persistence tests, documentation tests, and the release browser build. Dependency checks run separately in CI. The one narrow advisory exception is Leptos's transitive, unmaintained `paste` procedural macro; its reason is recorded in `deny.toml`.
-
-Build the example and release executable, then exercise the real CLI/API/worker workflow:
-
-```bash
-cargo build --locked --release --bin tc
-cargo build --manifest-path examples/strategy/Cargo.toml --release --locked
-./scripts/build-web
-python3 scripts/smoke.py
-# Also observe public market data, paper fills, and recovery across a restart:
-python3 scripts/smoke.py --live
-# Check terminal exit controls with a live event stream connected (Linux):
-python3 scripts/shutdown-smoke.py
-```
+The [development guide](docs/development.md) covers toolchain installation, packaged workflow/security tests and optional browser QA. Agent setup and the source-to-evaluation loop are documented in [the agent guide](docs/agents.md).
 
 ## Documentation
 
 - [Local operations and complete workflow](docs/operations.md)
+- [Agent development workflow and author kit](docs/agents.md)
 - [API, model capabilities, and external Rust strategies](docs/api.md)
 - [Development toolchain setup](docs/development.md)
 - [Engine adoption decision](docs/decisions/0001-engine.md)
 - [Validation evidence and supported limits](docs/validation.md)
 - [Requested improvements backlog](docs/backlog.md)
-- [V2 priorities](docs/v2.md)
+- [V2 status and scope](docs/v2.md)
 - [Research and sources](docs/research.md)
-- [Accepted implementation plan](docs/implementation-plan.md)
-- [Critical planning self-review](docs/self-review.md)
+- [Original V1 implementation plan](docs/implementation-plan.md)
+- [Original planning self-review](docs/self-review.md)
 
 Returns include configured trading fees and adverse execution costs. A 15% drawdown criterion and 15% annual growth target are research settings; neither establishes future profitability or guarantees a loss ceiling.

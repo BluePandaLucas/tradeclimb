@@ -23,21 +23,22 @@ The tool has one owner; there is no multi-user registration or third-party ident
 ./scripts/setup-agent var
 ```
 
-This uses noninteractive sudo to create/reuse `tc-agent`, with a locked password, no login shell or supplementary groups, and no sudo access. It issues a 30-day development credential into that account's private home. Re-running revokes its preceding credential. `tc auth status` lists credential IDs/expiry/revocation without secret values; `tc auth revoke ID` revokes one, closes its streams, and cancels its queued/running jobs and tuning controllers.
+This uses noninteractive sudo to create/reuse `tc-agent`, with a locked password, no login shell or supplementary groups, and no sudo access. It issues a 30-day development credential into that account's private home. Re-running revokes its preceding credential. `tc auth status` lists credential IDs/expiry/revocation without secret values; `tc auth revoke ID` revokes one, closes its streams, and cancels its queued/running candidates, jobs and tuning controllers.
 
 Start TC first, then run an explicitly selected program through the prepared launcher:
 
 ```bash
-./scripts/run-agent /usr/bin/python3 -c 'import os; print(os.environ["TC_API_SOCKET"])'
+./scripts/run-agent /usr/bin/python3 /tools/tc_agent.py capabilities
+./scripts/run-agent /usr/bin/python3 /tools/tc_agent.py init my-strategy
 ```
 
 The launcher uses a separate UID, private user/PID/network/IPC namespaces, a read-only system image, a writable `/workspace` mapped to the agent home, 256-MiB temporary space, no owner environment, and a cgroup capped at 4 GiB/no swap, 128 tasks, two CPU cores and six hours. The only host service it can reach is the mounted `TC_API_SOCKET`, speaking ordinary HTTP over a Unix socket. Read the agent key from `TC_API_TOKEN_FILE` and send `Authorization: Bearer KEY`. The socket rejects owner credentials/cookies and login entirely. This prevents an agent from reaching owner browser sessions, local debug ports, other local services, or the Internet. Do not run untrusted agents directly with `sudo -u`; the launcher is the supported boundary.
 
-Agents can read development results and submit/tune development evaluations. Idempotency and cancellation are credential-scoped. They cannot query validation, create campaigns, archive strategies, invoke owner model scopes, promote/stop paper sessions, or see owner paper/validation snapshots. Token revocation/expiry also closes long-lived streams. Actual agent/model tooling, bounded inference for strategy invention, reviewed SDK distribution and candidate handoff will be connected when the separate orchestrator project starts; no agent/model process is launched by setup.
+Agents can obtain the pinned SDK/client kit, submit bounded Rust source for sandboxed build/preflight/registration, read development candle slices and request bounded decision traces, as well as submit/tune development evaluations. See the [agent workflow](agents.md). Idempotency and cancellation are credential-scoped. They cannot query validation, create campaigns, archive strategies, invoke owner model scopes, promote/stop paper sessions, or see owner paper/validation snapshots. Token revocation/expiry also closes long-lived streams. The separate orchestrator remains responsible for strategy invention and its model-provider credentials; setup launches no agent/model process. The service prepares its trusted SDK/compiler platform on startup; when starting outside this checkout, pass `serve --sdk-root /path/to/tradeclimb`. Provision the reviewed Cargo cache before candidate builds; agents cannot fetch dependencies.
 
 Local CLI operations still belong to the filesystem owner. Raw owner credentials must never be given to agents. Candidate source copying uses Linux openat2 with beneath/no-symlink resolution to reject symlink/directory-swap escapes, special files and private TC directories before isolated builds.
 
-The header theme toggle follows the system setting by default. An explicit light/dark preference is remembered in this browser; **System** restores automatic detection. To exit the running service, press **Ctrl+C**, or type **q**, **quit**, or **exit** and press Enter in its terminal. SIGTERM also requests a clean shutdown.
+To exit, press **Ctrl+C**, or type **q**, **quit**, or **exit** and press Enter. SIGTERM also requests a clean shutdown.
 
 ## Try the complete workflow with synthetic data
 
@@ -128,12 +129,13 @@ target/release/tc builtin --name "MA baseline" --kind ma --fast 20 --slow 100
 To build and register the external Rust example:
 
 ```bash
-cargo build --manifest-path examples/strategy/Cargo.toml --release --locked
+target/release/tc build --project examples/strategy --sdk-root . \
+  --bin tc-example-strategy --output var/builds/strategy
 target/release/tc register \
   --name "Half BTC" \
   --description "Hold half the virtual portfolio in BTC and the rest in cash" \
   --project examples/strategy \
-  --executable examples/strategy/target/release/tc-example-strategy
+  --executable var/builds/strategy
 ```
 
 Registration retains the executable, source files, and Cargo.lock and records hashes and optional lineage. The executable is rechecked when preparing a run and resolved within the selected data directory after restore. For other strategies, `--parameters '{"lookback":30}'` supplies immutable inputs through `TC_STRATEGY_SPEC`. Strategy sources stay in their own project; the example here is an integration template.
@@ -178,13 +180,13 @@ Service shutdown closes browser event streams, cancels workers, and leaves activ
 target/release/tc backup /absolute/path/to/new-backup
 ```
 
-The backup uses SQLite's consistent backup API and copies datasets, registered source/executable artifacts, and historical job reports. It excludes raw download caches, which are not necessary to reproduce a published snapshot. Runtime PID ownership/leases are removed from the backup. Use a new destination. Restore by starting against that directory:
+The backup uses SQLite's consistent backup API and copies datasets, registered source/executable artifacts, historical reports, candidate requests and pinned SDK platforms. It excludes raw download caches, which are not necessary to reproduce a published snapshot. Runtime PID ownership/leases are removed from the backup. Use a new destination. Restore by starting against that directory:
 
 ```bash
 target/release/tc --data-dir /absolute/path/to/new-backup serve --bind 127.0.0.1:8081
 ```
 
-Interrupted historical jobs need a new submission/idempotency key. Published dataset files are verified by checksum when loaded. Preserve the backup as a unit: a database without its referenced immutable files is incomplete. Confirm a restored external strategy can be loaded before relying on a backup.
+Interrupted historical jobs and active candidate builds need a new submission/idempotency key. Queued candidates remain queued. Use the reviewed SDK root when starting a restored service. Published dataset files are verified by checksum when loaded. Preserve the backup as a unit: a database without its referenced immutable files is incomplete. Confirm a restored external strategy can be loaded before relying on a backup.
 
 
 ## Reproduce throughput measurements
@@ -245,4 +247,4 @@ Buy-and-hold overlays are solid, partially transparent lines with stable referen
 
 The full-run comparison table shows each reference's Sharpe, the strategy-minus-reference Sharpe difference, information ratio and return difference in percentage points. Keep Sharpe as the main risk-adjusted ranking and use IR to assess consistent performance above the fixed five-asset basket; BTC is a secondary reference. An undefined comparison remains —, especially when complete daily observations are missing. Hiding a reference curve or changing chart windows does not change scoring. Existing recorded results are not reranked.
 
-After packaging, `python scripts/browser-research.py` in the Playwright environment tests the chart styles/density policy, full-resolution diagnostic payloads, explicit owner validation access, unchanged query usage and continued agent denial. All QA uses temporary synthetic fixtures; no real validation/final evaluation is required.
+Verification commands and temporary-fixture suites are listed in [development](development.md).

@@ -132,6 +132,8 @@ The available evidence supports an entry-tier commission assumption and a conser
 
 ## V2 data-source shortlist — checked 4 November 2026
 
+This shortlist records the initial investigation. Kraken was subsequently imported and its documented gaps explicitly accepted for a separate research comparison; see [the completed audit](v2-kraken-audit.json) and [current operations](operations.md#free-kraken-comparison-data).
+
 The owner accepted the Bitvavo gaps and reserved August–October 2026 as the untouched final test. Ranking prioritizes a usable historical comparison now, cost, then venue fidelity. No option is a verified clean, venue-matched replacement for the whole four years. No vendor was contacted or paid subscription started. Research inspected documentation and coverage metadata, not final-test prices or strategy performance.
 
 | Rank | Way to improve the data | Evidence and cost | Limitation / next step |
