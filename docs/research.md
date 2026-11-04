@@ -91,3 +91,41 @@ Axum/Tokio fit the proposed local API and asynchronous market feed; CPU backtest
 Use a provider-independent inference service with a fake implementation for tests and an optional local Ollama adapter. The adapter is an interface demonstration, not a requirement to download or run a model. Source: [Ollama generation API](https://docs.ollama.com/api/generate).
 
 Run Clippy with warnings denied on the same pinned toolchain as compilation, in local checks and CI. Source: [Clippy CI guidance](https://doc.rust-lang.org/clippy/continuous_integration/index.html). Rust was initially absent; following user approval, Rust/Cargo 1.99.1 and the required components were installed and pinned. See [development setup](development.md).
+
+
+## Cost accuracy audit — 4 November 2026
+
+The 25 bps commission assumption is appropriate for current entry-tier EUR market orders. The complete cost estimate is **not calibrated to realized execution**. A short live-book sample suggests the 10 bps adverse allowance is conservative for displayed liquidity in this window, but does not establish historical accuracy or stressed-market coverage. No simulator defaults were changed by this audit.
+
+### Commission and accounting
+
+All five supported markets are currently Category A. Bitvavo lists 25 bps taker fees below EUR 100,000 of rolling 30-day volume, 20 bps from EUR 100,000, and 18 bps from EUR 250,000. Our fixed 25 bps is therefore correct for a current entry-tier taker account and can overstate commissions at higher volumes. It does not reconstruct historical schedules or account tiers. Maker pricing is inapplicable to our market-only execution model. Sources: [official fee schedule](https://www.bitvavo.com/en/fees), [account fee API](https://docs.bitvavo.com/docs/rest-api/get-market-fees/).
+
+`RunConfig::new` pins 25 bps fees and 10 bps adverse price movement per fill. `Simulator::execute` debits/credits the adjusted fill notional, then applies fees to that notional; both sides and terminal liquidation incur costs. At an unchanged reference price, a fully invested buy/sell retains `(1-0.001)*(1-0.0025)/((1+0.001)*(1+0.0025))` of starting cash: a **69.76 bps (0.6976%) loss**, before quantity rounding. Simply summing 35 + 35 bps gives the useful approximation of 0.70%.
+
+There is a precision mismatch to resolve. The engine rounds each fee upward at eight decimal places. Bitvavo describes quote-asset fees rounded up at asset precision, with fee averaging across fills of an order; its help article describes fiat rounding at two decimals. Our one-simulated-fill accounting does not replicate that reconciliation. For illustration, EUR 5 × 0.25% = EUR 0.0125; rounding that fee up to cents would charge EUR 0.02 rather than EUR 0.0125. Exact account-ledger treatment should be reconciled before calling fees exchange-exact. Sources: [trading rules §17.4](https://www.bitvavo.com/en/trading-rules), [fee calculation help](https://support.bitvavo.com/hc/en-us/articles/4405175148689-What-is-the-trading-fee-when-I-buy-or-sell-crypto).
+
+### Live public-book sanity check
+
+The read-only [audit script](../scripts/cost-audit.py) captured three snapshots per market from 13:17:58 to 13:18:05 UTC. It walked up to 1,000 levels for EUR 1,000, 2,000 and 10,000 orders. Buy calculations spend the stated quote notional before fees; sells use base quantity worth that notional at the contemporaneous midpoint. Every hypothetical side had sufficient returned depth. Metadata, request timestamps, response hashes, summaries and individual calculations are in [cost-audit.json](cost-audit.json). The [interactive chart](cost-audit.html) compares these static-book costs with the assumed allowance. Endpoint definition: [Bitvavo order book API](https://docs.bitvavo.com/docs/rest-api/get-order-book/).
+
+| Market | EUR 2,000 median cost, bps/side | EUR 10,000 median | EUR 10,000 largest sampled side |
+| --- | ---: | ---: | ---: |
+| BTC-EUR | 0.07 | 0.07 | 0.16 |
+| ETH-EUR | 0.24 | 0.51 | 0.68 |
+| SOL-EUR | 0.51 | 1.11 | 1.67 |
+| XRP-EUR | 0.79 | 0.92 | 1.45 |
+| ADA-EUR | 1.26 | 2.34 | 2.89 |
+
+These are **spread plus displayed-depth cost relative to midpoint, excluding commissions**. The median pools buy/sell costs from three snapshots (six hypothetical sides), not six independent market observations. The largest sampled side was 2.89 bps. The fixed 10 bps allowance exceeded every displayed-book estimate in this short window. That supports retaining a conservative sensitivity assumption; it does **not** justify reducing it or interpreting it as a measured percentile.
+
+A static book walk assumes visible orders remain available throughout execution. It excludes cancellations, latency, adverse selection, subsequent impact and volatile periods. The backtest reference is the next minute candle's opening trade price, not midpoint; transaction-price spread effects may already be embedded. Consequently this sample cannot estimate historical prediction error for the 10 bps parameter. Bitvavo confirms that market orders may consume multiple price levels and that order size and liquidity affect execution: [official explanation](https://support.bitvavo.com/hc/en-us/articles/4405191470353-How-are-cryptocurrency-prices-determined).
+
+### Remaining model limitations and recommended work
+
+- **Historical fills:** a positive candle volume is sufficient for the engine to fill the full intended quantity at one adjusted opening price. There is no participation cap, book-depth walk, partial fill or latency-dependent price. This can be optimistic during thin or stressed markets even when the usual fixed allowance is conservative.
+- **Paper fills:** `execute_quotes` obtains executable bid/ask quotes, then calls the same engine with its default 10 bps adverse adjustment still enabled. Thus paper costs include observed spread **plus** a further 10 bps, not a measured 10 bps total. It waits if required quantity exceeds displayed top-level size rather than walking deeper liquidity. That is a conservative policy, not a reproduction of an exchange market order.
+- **Market rules:** the sample confirms the EUR 5 minimum, but BTC/ETH/SOL allow eight quantity decimals while our default rules use six for every market. ADA/XRP match six. The API also exposes per-market tick size, base minimums and quote precision that are not fully reconstructed historically. Source: [market metadata API](https://docs.bitvavo.com/docs/rest-api/get-markets/).
+- **Calibration priority:** first reconcile EUR fee rounding and use a pinned, explicit account tier; then capture timestamped spread/depth and simulated order size over representative sessions, including volatile periods. Estimate costs by market, size and volatility, and separate observed spread from residual latency/impact. Keep development stress scenarios at 10/25/50 bps per fill and disclose them as assumptions. Preserve validation's frozen configuration; research changes should be new explicit experiments, not silent retroactive rescoring.
+
+The available evidence supports an entry-tier commission assumption and a conservative normal-liquidity allowance. It does not support a numerical claim such as “costs are 95% accurate,” or a guarantee that the allowance covers tail execution costs.

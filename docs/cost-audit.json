@@ -1,0 +1,759 @@
+{
+  "description": "Short public static-book sanity check, not realized fills or historical cost calibration",
+  "method": "Buy: walk asks to spend EUR notional before fees. Sell: walk bids for notional/mid base units. Costs relative to contemporaneous midpoint. Each side independent; book unchanged during a walk.",
+  "limitations": [
+    "Only three snapshots per market in one short window; not independent samples or tail estimates",
+    "Displayed liquidity can cancel; excludes order latency and subsequent market impact",
+    "Backtest uses next candle open, not midpoint, so snapshot costs are not direct historical error estimates",
+    "Fees, exchange rounding and order precision are excluded from depth walks",
+    "Null costs mean insufficient returned depth, never zero cost"
+  ],
+  "market_provenance": {
+    "url": "https://api.bitvavo.com/v2/markets",
+    "received_utc": "2026-11-04T13:17:58.289189+00:00",
+    "server_date": "Wed, 04 Nov 2026 13:17:58 GMT",
+    "request_ms": 90.65,
+    "response_sha256": "88adefdce03bbc1177bb574728c0084f06fd271e02cfc7b9ad713d7075e78d0b"
+  },
+  "markets": [
+    {
+      "market": "ADA-EUR",
+      "status": "trading",
+      "base": "ADA",
+      "quote": "EUR",
+      "pricePrecision": null,
+      "minOrderInBaseAsset": "29.225010",
+      "minOrderInQuoteAsset": "5.00",
+      "maxOrderInBaseAsset": "5845002013.359932",
+      "maxOrderInQuoteAsset": "1000000000.00",
+      "quantityDecimals": 6,
+      "notionalDecimals": 2,
+      "tickSize": "0.0000100",
+      "maxOpenOrders": 100,
+      "feeCategory": "A",
+      "orderTypes": [
+        "market",
+        "limit",
+        "stopLoss",
+        "stopLossLimit",
+        "takeProfit",
+        "takeProfitLimit"
+      ]
+    },
+    {
+      "market": "BTC-EUR",
+      "status": "trading",
+      "base": "BTC",
+      "quote": "EUR",
+      "pricePrecision": null,
+      "minOrderInBaseAsset": "0.00007294",
+      "minOrderInQuoteAsset": "5.00",
+      "maxOrderInBaseAsset": "14588.11369242",
+      "maxOrderInQuoteAsset": "1000000000.00",
+      "quantityDecimals": 8,
+      "notionalDecimals": 2,
+      "tickSize": "1.00",
+      "maxOpenOrders": 400,
+      "feeCategory": "A",
+      "orderTypes": [
+        "market",
+        "limit",
+        "stopLoss",
+        "stopLossLimit",
+        "takeProfit",
+        "takeProfitLimit"
+      ]
+    },
+    {
+      "market": "SOL-EUR",
+      "status": "trading",
+      "base": "SOL",
+      "quote": "EUR",
+      "pricePrecision": null,
+      "minOrderInBaseAsset": "0.05976430",
+      "minOrderInQuoteAsset": "5.00",
+      "maxOrderInBaseAsset": "11952860.86447179",
+      "maxOrderInQuoteAsset": "1000000000.00",
+      "quantityDecimals": 8,
+      "notionalDecimals": 2,
+      "tickSize": "0.0010",
+      "maxOpenOrders": 200,
+      "feeCategory": "A",
+      "orderTypes": [
+        "market",
+        "limit",
+        "stopLoss",
+        "stopLossLimit",
+        "takeProfit",
+        "takeProfitLimit"
+      ]
+    },
+    {
+      "market": "XRP-EUR",
+      "status": "trading",
+      "base": "XRP",
+      "quote": "EUR",
+      "pricePrecision": null,
+      "minOrderInBaseAsset": "4.533631",
+      "minOrderInQuoteAsset": "5.00",
+      "maxOrderInBaseAsset": "906726135.778123",
+      "maxOrderInQuoteAsset": "1000000000.00",
+      "quantityDecimals": 6,
+      "notionalDecimals": 2,
+      "tickSize": "0.000010",
+      "maxOpenOrders": 100,
+      "feeCategory": "A",
+      "orderTypes": [
+        "market",
+        "limit",
+        "stopLoss",
+        "stopLossLimit",
+        "takeProfit",
+        "takeProfitLimit"
+      ]
+    },
+    {
+      "market": "ETH-EUR",
+      "status": "trading",
+      "base": "ETH",
+      "quote": "EUR",
+      "pricePrecision": null,
+      "minOrderInBaseAsset": "0.00243983",
+      "minOrderInQuoteAsset": "5.00",
+      "maxOrderInBaseAsset": "487965.30009054",
+      "maxOrderInQuoteAsset": "1000000000.00",
+      "quantityDecimals": 8,
+      "notionalDecimals": 2,
+      "tickSize": "0.010",
+      "maxOpenOrders": 100,
+      "feeCategory": "A",
+      "orderTypes": [
+        "market",
+        "limit",
+        "stopLoss",
+        "stopLossLimit",
+        "takeProfit",
+        "takeProfitLimit"
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "market": "BTC-EUR",
+      "notional_eur": 1000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.0719947587815607,
+      "min_bps_vs_mid": 0.07198439378342775,
+      "max_bps_vs_mid": 0.07199994240004608
+    },
+    {
+      "market": "BTC-EUR",
+      "notional_eur": 2000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.0719947587815607,
+      "min_bps_vs_mid": 0.07198439378342775,
+      "max_bps_vs_mid": 0.07199994240004608
+    },
+    {
+      "market": "BTC-EUR",
+      "notional_eur": 10000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.07199994240004608,
+      "min_bps_vs_mid": 0.07198439378342775,
+      "max_bps_vs_mid": 0.16185445648399427
+    },
+    {
+      "market": "ETH-EUR",
+      "notional_eur": 1000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.23127875424470928,
+      "min_bps_vs_mid": 0.02434695383087145,
+      "max_bps_vs_mid": 0.3388421782242624
+    },
+    {
+      "market": "ETH-EUR",
+      "notional_eur": 2000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.23851701893280092,
+      "min_bps_vs_mid": 0.02434695383087145,
+      "max_bps_vs_mid": 0.4128859298392384
+    },
+    {
+      "market": "ETH-EUR",
+      "notional_eur": 10000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.512786115771437,
+      "min_bps_vs_mid": 0.1851766246195014,
+      "max_bps_vs_mid": 0.6753052473384816
+    },
+    {
+      "market": "SOL-EUR",
+      "notional_eur": 1000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.3653238716458155,
+      "min_bps_vs_mid": 0.06088613683550392,
+      "max_bps_vs_mid": 0.7888787466065538
+    },
+    {
+      "market": "SOL-EUR",
+      "notional_eur": 2000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.5128164562564395,
+      "min_bps_vs_mid": 0.06088613683550392,
+      "max_bps_vs_mid": 1.201750449871078
+    },
+    {
+      "market": "SOL-EUR",
+      "notional_eur": 10000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 1.1130509631559689,
+      "min_bps_vs_mid": 0.6972445850272379,
+      "max_bps_vs_mid": 1.6726639993016008
+    },
+    {
+      "market": "XRP-EUR",
+      "notional_eur": 1000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.7195899582904053,
+      "min_bps_vs_mid": 0.07979057048540324,
+      "max_bps_vs_mid": 0.7925953976627242
+    },
+    {
+      "market": "XRP-EUR",
+      "notional_eur": 2000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.7925953976627242,
+      "min_bps_vs_mid": 0.12434789008154137,
+      "max_bps_vs_mid": 0.927267021667047
+    },
+    {
+      "market": "XRP-EUR",
+      "notional_eur": 10000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 0.9219855180008049,
+      "min_bps_vs_mid": 0.13055873642680343,
+      "max_bps_vs_mid": 1.4549950380622496
+    },
+    {
+      "market": "ADA-EUR",
+      "notional_eur": 1000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 1.190086579852062,
+      "min_bps_vs_mid": 0.5949193884228687,
+      "max_bps_vs_mid": 1.7412451992006068
+    },
+    {
+      "market": "ADA-EUR",
+      "notional_eur": 2000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 1.2601409449930787,
+      "min_bps_vs_mid": 0.7945031083186062,
+      "max_bps_vs_mid": 1.7631609787506068
+    },
+    {
+      "market": "ADA-EUR",
+      "notional_eur": 10000,
+      "filled_sides": 6,
+      "median_bps_vs_mid": 2.3392424132144027,
+      "min_bps_vs_mid": 1.6404876029314748,
+      "max_bps_vs_mid": 2.893801604201214
+    }
+  ],
+  "samples": [
+    {
+      "url": "https://api.bitvavo.com/v2/BTC-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:17:58.562839+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:17:58 GMT",
+      "request_ms": 271.63,
+      "response_sha256": "04151646323d774332cd144ca47926f204d623c31f49584e9a62b052b566c8b6",
+      "market": "BTC-EUR",
+      "round": 1,
+      "book_timestamp": 1793798278540573448,
+      "nonce": 449621890,
+      "bid": "69459",
+      "ask": "69460",
+      "spread_bps": 0.1439687875668555,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.07198439378342775,
+          "sell_bps_vs_mid": 0.07198439378342775
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.07198439378342775,
+          "sell_bps_vs_mid": 0.07198439378342775
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.07198439378342775,
+          "sell_bps_vs_mid": 0.16185445648399427
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/ETH-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:17:58.769895+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:17:58 GMT",
+      "request_ms": 206.29,
+      "response_sha256": "99cdd430875bb2b1ce90b7b5a5a8b4057269320831fea55a5ba7b22af3d37c77",
+      "market": "ETH-EUR",
+      "round": 1,
+      "book_timestamp": 1793798278741009478,
+      "nonce": 423233619,
+      "bid": "2053.83",
+      "ask": "2053.94",
+      "spread_bps": 0.5355703946423486,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.2677851973211743,
+          "sell_bps_vs_mid": 0.2677851973211743
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.27802387055653566,
+          "sell_bps_vs_mid": 0.2677851973211743
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.543953552472241,
+          "sell_bps_vs_mid": 0.5312188729006303
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/SOL-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:17:58.882109+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:17:58 GMT",
+      "request_ms": 111.04,
+      "response_sha256": "fa291b0342a03ecf13bdbd88ed9d6e503a0b7e1a2985a1e52209b05014aa4e39",
+      "market": "SOL-EUR",
+      "round": 1,
+      "book_timestamp": 1793798278840862381,
+      "nonce": 413410666,
+      "bid": "82.125",
+      "ask": "82.132",
+      "spread_bps": 0.8523228842606403,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.42616144213032014,
+          "sell_bps_vs_mid": 0.6134483305047889
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.42616144213032014,
+          "sell_bps_vs_mid": 0.8947048713781949
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 1.0906289422557562,
+          "sell_bps_vs_mid": 1.6726639993016008
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/XRP-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:17:59.113499+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:17:59 GMT",
+      "request_ms": 230.32,
+      "response_sha256": "059148dea79eaaf227c39593ef63b26c14d08f33792a7a2198fee5b2bf5d8de8",
+      "market": "XRP-EUR",
+      "round": 1,
+      "book_timestamp": 1793798279084055616,
+      "nonce": 360412656,
+      "bid": "1.13542",
+      "ask": "1.1356",
+      "spread_bps": 1.5851907953254485,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.7925953976627242,
+          "sell_bps_vs_mid": 0.7925953976627242
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.7925953976627242,
+          "sell_bps_vs_mid": 0.7925953976627242
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.7931468728795943,
+          "sell_bps_vs_mid": 1.0508241631220154
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/ADA-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:17:59.274958+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:17:59 GMT",
+      "request_ms": 160.4,
+      "response_sha256": "e1d333f91c1e2f1f2b6db4849fac141bb0f44c3d102792053ed7a7411b34a56e",
+      "market": "ADA-EUR",
+      "round": 1,
+      "book_timestamp": 1793798279246651412,
+      "nonce": 330118355,
+      "bid": "0.16808",
+      "ask": "0.1681",
+      "spread_bps": 1.1898387768457375,
+      "returned_bid_levels": 428,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 1.0651395904562948,
+          "sell_bps_vs_mid": 0.5949193884228687
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 1.1274887949476649,
+          "sell_bps_vs_mid": 0.7945031083186062
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 2.5624396447198317,
+          "sell_bps_vs_mid": 1.6404876029314748
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/BTC-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:01.576259+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:01 GMT",
+      "request_ms": 299.96,
+      "response_sha256": "8e25c1b390bb959558554bcb03ead5aa6ab876bb0618d91c7acdbb74876ef30c",
+      "market": "BTC-EUR",
+      "round": 2,
+      "book_timestamp": 1793798281547161108,
+      "nonce": 449621920,
+      "bid": "69449",
+      "ask": "69450",
+      "spread_bps": 0.1439895175631214,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.0719947587815607,
+          "sell_bps_vs_mid": 0.0719947587815607
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.0719947587815607,
+          "sell_bps_vs_mid": 0.0719947587815607
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.0719947587815607,
+          "sell_bps_vs_mid": 0.1354522739078035
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/ETH-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:01.778358+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:01 GMT",
+      "request_ms": 201.15,
+      "response_sha256": "be7768377e8c0de14a7b66770ee6307bb1be647c711c772199b8ee2a9b1ad028",
+      "market": "ETH-EUR",
+      "round": 2,
+      "book_timestamp": 1793798281747548639,
+      "nonce": 423233649,
+      "bid": "2053.64",
+      "ask": "2053.65",
+      "spread_bps": 0.0486939076617429,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.02434695383087145,
+          "sell_bps_vs_mid": 0.02434695383087145
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.02434695383087145,
+          "sell_bps_vs_mid": 0.07061865044830046
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.1851766246195014,
+          "sell_bps_vs_mid": 0.49435335864224367
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/SOL-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:01.880589+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:01 GMT",
+      "request_ms": 101.13,
+      "response_sha256": "3313110dc9212df470b6887aaef03dc81ef0da994133dbdf0257e8e7aa1efe8a",
+      "market": "SOL-EUR",
+      "round": 2,
+      "book_timestamp": 1793798281847717789,
+      "nonce": 413410696,
+      "bid": "82.12",
+      "ask": "82.121",
+      "spread_bps": 0.12177227367100785,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.06088613683550392,
+          "sell_bps_vs_mid": 0.28565088823255885
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.06088613683550392,
+          "sell_bps_vs_mid": 0.5994714703825589
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.6972445850272379,
+          "sell_bps_vs_mid": 1.0361157381945745
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/XRP-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:02.228576+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:02 GMT",
+      "request_ms": 346.91,
+      "response_sha256": "d584d74c80fd5d002495523f1ff142a5276693aaa9804dea3db585bda3c55f50",
+      "market": "XRP-EUR",
+      "round": 2,
+      "book_timestamp": 1793798282196321811,
+      "nonce": 360412685,
+      "bid": "1.1354",
+      "ask": "1.13541",
+      "spread_bps": 0.08807429947904052,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.11658434299892345,
+          "sell_bps_vs_mid": 0.7260879870299255
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.12434789008154137,
+          "sell_bps_vs_mid": 0.927267021667047
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.13055873642680343,
+          "sell_bps_vs_mid": 1.4549950380622496
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/ADA-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:02.343624+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:02 GMT",
+      "request_ms": 113.93,
+      "response_sha256": "7696141ddd6fbc61656d76348ccb57c6914577a69818f0d1895b9a24a2c80bbd",
+      "market": "ADA-EUR",
+      "round": 2,
+      "book_timestamp": 1793798282321849439,
+      "nonce": 330118383,
+      "bid": "0.16803",
+      "ask": "0.16807",
+      "spread_bps": 2.3802439750074385,
+      "returned_bid_levels": 426,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 1.1901219875037192,
+          "sell_bps_vs_mid": 1.1901219875037192
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 1.472499228142841,
+          "sell_bps_vs_mid": 1.1901219875037192
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 2.705639836249201,
+          "sell_bps_vs_mid": 1.7791518550792977
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/BTC-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:04.599658+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:04 GMT",
+      "request_ms": 254.9,
+      "response_sha256": "9b28c488cd8e5127fb3372f828c0fad6f9caa8a1805cfb6401d22ae0efdb2d1a",
+      "market": "BTC-EUR",
+      "round": 3,
+      "book_timestamp": 1793798284559358208,
+      "nonce": 449621950,
+      "bid": "69444",
+      "ask": "69445",
+      "spread_bps": 0.14399988480009215,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.07199994240004608,
+          "sell_bps_vs_mid": 0.07199994240004608
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.07199994240004608,
+          "sell_bps_vs_mid": 0.07199994240004608
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.07199994240004608,
+          "sell_bps_vs_mid": 0.07199994240004608
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/ETH-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:04.793552+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:04 GMT",
+      "request_ms": 192.98,
+      "response_sha256": "6d8e3f8921915098116c0726092ace2f703111d7bfa710a8f160ae1154d283de",
+      "market": "ETH-EUR",
+      "round": 3,
+      "book_timestamp": 1793798284760968152,
+      "nonce": 423233679,
+      "bid": "2053.64",
+      "ask": "2053.72",
+      "spread_bps": 0.3895446223364886,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.3388421782242624,
+          "sell_bps_vs_mid": 0.1947723111682443
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.4128859298392384,
+          "sell_bps_vs_mid": 0.20924884054442758
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.6753052473384816,
+          "sell_bps_vs_mid": 0.3564792513206108
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/SOL-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:04.892341+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:04 GMT",
+      "request_ms": 97.66,
+      "response_sha256": "7cc4253faaccab9ee2465f206d64e3cbbf81fa99f0ecf5727e2934511505b3e7",
+      "market": "SOL-EUR",
+      "round": 3,
+      "book_timestamp": 1793798284862510718,
+      "nonce": 413410726,
+      "bid": "82.103",
+      "ask": "82.108",
+      "spread_bps": 0.6089726023226215,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.30448630116131076,
+          "sell_bps_vs_mid": 0.7888787466065538
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.34196803269395853,
+          "sell_bps_vs_mid": 1.201750449871078
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 1.1354729840561815,
+          "sell_bps_vs_mid": 1.6566845743401266
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/XRP-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:05.005954+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:04 GMT",
+      "request_ms": 112.63,
+      "response_sha256": "56d13e534e75d1ab2a0d4dc3cc1675a94f740a17d6717bd1cef4d0be203d3997",
+      "market": "XRP-EUR",
+      "round": 3,
+      "book_timestamp": 1793798284967625338,
+      "nonce": 360412711,
+      "bid": "1.1354",
+      "ask": "1.13541",
+      "spread_bps": 0.08807429947904052,
+      "returned_bid_levels": 1000,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 0.07979057048540324,
+          "sell_bps_vs_mid": 0.713091929550885
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 0.27378177071267834,
+          "sell_bps_vs_mid": 0.8170159283799254
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 0.5527931264756311,
+          "sell_bps_vs_mid": 1.2983585662822497
+        }
+      ]
+    },
+    {
+      "url": "https://api.bitvavo.com/v2/ADA-EUR/book?depth=1000",
+      "received_utc": "2026-11-04T13:18:05.133125+00:00",
+      "server_date": "Wed, 04 Nov 2026 13:18:05 GMT",
+      "request_ms": 126.03,
+      "response_sha256": "b2a5cc2e3b429de20ca078a12d743bd713330ea232f782d162d36f9c885ebe28",
+      "market": "ADA-EUR",
+      "round": 3,
+      "book_timestamp": 1793798285109592112,
+      "nonce": 330118408,
+      "bid": "0.16804",
+      "ask": "0.16808",
+      "spread_bps": 2.380102344400809,
+      "returned_bid_levels": 428,
+      "returned_ask_levels": 1000,
+      "costs": [
+        {
+          "notional_eur": 1000,
+          "buy_bps_vs_mid": 1.1900511722004046,
+          "sell_bps_vs_mid": 1.7412451992006068
+        },
+        {
+          "notional_eur": 2000,
+          "buy_bps_vs_mid": 1.3301599024824384,
+          "sell_bps_vs_mid": 1.7631609787506068
+        },
+        {
+          "notional_eur": 10000,
+          "buy_bps_vs_mid": 2.1160451817089734,
+          "sell_bps_vs_mid": 2.893801604201214
+        }
+      ]
+    }
+  ]
+}
