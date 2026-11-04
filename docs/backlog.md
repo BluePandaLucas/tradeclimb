@@ -1,9 +1,9 @@
 # TradeClimb backlog
 
-Requested improvements awaiting the owner's instruction to implement. All items below are pending; their order does not imply priority.
+Requested improvements implemented on 4 November 2026. New pending items can be added below.
 
-- [ ] **Collapsible sidebar.** Allow the left navigation sidebar to collapse and expand.
-- [ ] **Smoother theme changes.** Add a smooth transition when switching color themes.
-- [ ] **Overview metrics only on Overview.** Show Strategy versions, Active evaluations, Completed backtests, and Validation budget only on the Overview tab. Remove these duplicate sections from every other tab.
-- [ ] **Run Backtest bar only on Backtests.** Show the Run Backtest bar only on the Backtests tab; remove it from every other tab, including Overview.
-- [ ] **Strategy leaderboard.** Add a Leaderboard page showing the best strategies ranked by returns. Decide the ranking metric and comparison rules when this item is selected for implementation.
+- [x] **Collapsible sidebar.** Allow the left navigation sidebar to collapse and expand.
+- [x] **Smoother theme changes.** Add a smooth transition when switching color themes.
+- [x] **Overview metrics only on Overview.** Show Strategy versions, Active evaluations, Completed backtests, and Validation budget only on the Overview tab. Remove these duplicate sections from every other tab.
+- [x] **Run Backtest bar only on Backtests.** Show the Run Backtest bar only on the Backtests tab; remove it from every other tab, including Overview.
+- [x] **Strategy leaderboard.** Add a Leaderboard page showing the best strategies ranked by returns. Rank by net CAGR within the same campaign, period, and exact execution settings, using each version’s latest completed run. Exact ties share rank; unscored runs are excluded, archived versions retained, and validation stays CAGR-only.

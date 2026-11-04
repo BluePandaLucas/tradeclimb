@@ -1,6 +1,7 @@
 //! Local control plane: durable jobs, validation ledger, and paper portfolios.
 mod http;
 mod inference;
+mod leaderboard;
 mod paper;
 use anyhow::{Context, Result, ensure};
 pub use http::serve;

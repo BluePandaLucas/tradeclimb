@@ -4,9 +4,11 @@ Run the server on the same machine as the CLI. The HTTP API has no login and is 
 
 The overview is also streamed as an SSE `snapshot` event every second at `/api/events`. Reconnecting receives a fresh snapshot. Curves are loaded for the selected run, not broadcast for every historic run. Overview snapshots show the latest 50 jobs; the CLI and job endpoint can retrieve an older known ID. SQLite retains the history.
 
+The `leaderboards` array compares completed runs across the full retained history, independently of the recent-job limit. Each group contains `id`, `campaign`, `period`, the exact `config`, and `entries`. A strategy version contributes its latest completed run by creation time (newest database row breaks timestamp ties). Entries with missing or non-finite net CAGR are excluded without falling back to an older run. Entries sort by net CAGR descending; exact ties share a competition rank (1, 1, 3), ordered by strategy ID. Each entry exposes `rank`, `strategy`, `job`, `created_at`, `net_cagr`, and `eligibility`. Archived versions remain ranked; eligibility does not filter rank. Validation uses only its permitted scalar CAGR and reports eligibility as `CAGR only`. Development and validation, different campaigns, and different execution settings never share a ranking.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/overview` | Strategies, campaigns, recent jobs, paper sessions, datasets, tuning status, validation ledger |
+| GET | `/api/overview` | Strategies, campaigns, recent jobs, leaderboards, paper sessions, datasets, tuning status, validation ledger |
 | GET | `/api/events` | SSE overview snapshots; validation includes no curves or granular progress |
 | POST | `/api/jobs` | Submit a registered strategy to a fixed campaign |
 | GET | `/api/jobs/{id}` | Run status and permitted results |
