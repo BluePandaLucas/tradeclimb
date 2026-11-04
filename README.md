@@ -32,6 +32,8 @@ The [development guide](docs/development.md) covers toolchain installation, pack
 
 ## Documentation
 
+Guides describe the code in this commit; release history lives in Git. Dated research, audits and original planning records retain their historical context.
+
 - [Local operations and complete workflow](docs/operations.md)
 - [Agent development workflow and author kit](docs/agents.md)
 - [API, model capabilities, and external Rust strategies](docs/api.md)
@@ -39,7 +41,7 @@ The [development guide](docs/development.md) covers toolchain installation, pack
 - [Engine adoption decision](docs/decisions/0001-engine.md)
 - [Validation evidence and supported limits](docs/validation.md)
 - [Requested improvements backlog](docs/backlog.md)
-- [V2 status and scope](docs/v2.md)
+- [Status and scope](docs/status.md)
 - [Research and sources](docs/research.md)
 - [Original V1 implementation plan](docs/implementation-plan.md)
 - [Original planning self-review](docs/self-review.md)

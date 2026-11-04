@@ -1,6 +1,6 @@
 # TradeClimb platform research
 
-Research date: 3 November 2026. Scope: a local, single-user Rust platform for strategy development, historical evaluation, and paper trading on Bitvavo. Agent orchestration belongs in a separate repository. This is a platform proposal, not evidence that the requested returns are achievable.
+Research date: 3 November 2026. Scope: a local, single-user Rust platform for strategy development, historical evaluation, and paper trading on Bitvavo. Agent orchestration belongs in a separate repository. This records the original investigation and dated follow-up audits, not evidence that the requested returns are achievable. Use [status](status.md), [operations](operations.md) and [API](api.md) for current behavior.
 
 ## Recommended direction
 
@@ -24,11 +24,11 @@ Barter is a Rust trading ecosystem with interchangeable strategy, risk, data, an
 
 ### HftBacktest
 
-HftBacktest explicitly models feed/order latency and queue position using order-book and trade data. This is a useful reference for v2 execution realism. Those inputs cannot be reconstructed faithfully from minute candles. Do not add a superficial limit-order simulator to v1 and describe it as realistic. Source: [HftBacktest documentation](https://hftbacktest.readthedocs.io/en/latest/).
+HftBacktest explicitly models feed/order latency and queue position using order-book and trade data. This is a useful reference for future execution realism. Those inputs cannot be reconstructed faithfully from minute candles. A superficial limit-order simulator would not establish realistic execution. Source: [HftBacktest documentation](https://hftbacktest.readthedocs.io/en/latest/).
 
 ### Build or adopt
 
-Implementation outcome: the [engine decision](decisions/0001-engine.md) records the native reference exercise and selection of the narrow TC engine for v1. The recommendation below describes the original research checkpoint.
+Implementation outcome: the [engine decision](decisions/0001-engine.md) records the native reference exercise and selection of the narrow TC engine. The recommendation below describes the original research checkpoint.
 
 Recommendation: own TC's experiment, SDK, UI, and data contracts. Provisionally use a deliberately narrow TC candle simulator; confirm this at milestone 1 against a native Nautilus example and Barter's interfaces. Adopt an existing engine only if it reduces tested code without requiring Python, a large runtime, or exposing framework internals in the public SDK. If adoption wins, replace the simulator implementation behind TC's interface and update the plan before widening scope. Avoid copying project code without inspecting its license and obligations.
 
@@ -40,7 +40,7 @@ Read-only requests to Bitvavo's public `GET /v2/markets` on the research date re
 
 Probe URLs used the form `https://api.bitvavo.com/v2/BTC-EUR/candles?interval=1m&start=1667260800000&end=1667264400000&limit=60`, substituting the market and date. A full data audit remains an implementation acceptance gate. Current market metadata is not proof of historical trading rules.
 
-Choosing today's surviving assets introduces selection bias. Freeze this universe in every experiment and do not claim the result generalizes to the entire crypto market. A historical universe including delistings belongs in v2.
+Choosing today's surviving assets introduces selection bias. Freeze this universe in every experiment and do not claim the result generalizes to the entire crypto market. A historical universe including delistings remains deferred.
 
 ## Historical data and price classes
 
@@ -64,7 +64,7 @@ For a modest paid budget, CoinAPI currently lists a $79/month Startup plan with 
 
 For detailed trade/quote/book research, Tardis provides tick datasets and replay products. Its spot Solo pricing currently displays $900/month; its historical-access policy gives four years with yearly billing, versus shorter access under monthly or quarterly billing. Confirm the exact plan, venue coverage, and billing total. Bitvavo coverage was not established by this research; do not buy a subscription on that assumption. Sources: [Tardis pricing](https://tardis.dev/#pricing), [history and billing](https://docs.tardis.dev/faq/billing-and-subscriptions).
 
-Recommendation: spend nothing on v1 data until the direct Bitvavo audit fails or a strategy demonstrates that minute candles are insufficient. Paid book data is an execution-research upgrade, not an automatic improvement in strategy quality. Historical spread, depth, and executable size remain unknown in a candle-only dataset.
+Recommendation: spend nothing on data until the direct Bitvavo audit fails or a strategy demonstrates that minute candles are insufficient. Paid book data is an execution-research upgrade, not an automatic improvement in strategy quality. Historical spread, depth, and executable size remain unknown in a candle-only dataset.
 
 ## Costs and benchmark design
 
@@ -72,17 +72,17 @@ Bitvavo currently lists entry-tier EUR taker fees of 0.25% per trade and maker f
 
 A buy and subsequent sell therefore cost approximately 0.5% in fees alone at the entry tier, before spread/slippage. This makes turnover a first-class diagnostic. Use a configurable adverse execution allowance, initially proposed at 10 basis points per fill, and run development stress checks at 25 and 50 basis points. These allowances are sensitivity assumptions, not measured Bitvavo estimates. Avoid double-counting spread in paper trading when using observed bid/ask quotes.
 
-Use BTC buy-and-hold and an equal-weight, initially allocated five-asset buy-and-hold basket as reference curves; show individual-asset references when relevant. Use the same venue, EUR denomination, dates, starting cash, fees, and end liquidation convention. The basket has no periodic rebalancing in v1. Show risk alongside return because an unconstrained buy-and-hold portfolio may fail TC's drawdown objective.
+Use BTC buy-and-hold and an equal-weight, initially allocated five-asset buy-and-hold basket as reference curves; show individual-asset references when relevant. Use the same venue, EUR denomination, dates, starting cash, fees, and end liquidation convention. The basket has no periodic rebalancing. Show risk alongside return because an unconstrained buy-and-hold portfolio may fail TC's drawdown objective.
 
 ## Evaluation and optimization pitfalls
 
 Repeated strategy selection can overfit even when each backtest is technically correct. Bailey and coauthors discuss why conventional holdouts are unreliable under investment backtest selection. TC's exact policy below is a proposed mitigation, not a claim of statistical validity. Source: [The probability of backtest overfitting](https://escholarship.org/uc/item/4w1110bb).
 
-Expose complete period 1 results and only period 2 net CAGR to the optimizer, as requested. Scalar feedback still enables adaptive fitting. Count validation queries across the whole experiment and all strategy families, cache repeated queries, freeze dates, and limit new validation evaluations. Future paper trading then provides genuinely new observations. Keep rolling/walk-forward testing in v2, and recommend a one-time final historical holdout there as well.
+Expose development results to agents and reserve validation feedback for the owner. Current validation summaries return the campaign objective (Sharpe or legacy net CAGR); an audited owner reveal opens detail without granting agent access. Scalar feedback still enables adaptive fitting. Count queries globally, cache repeated evaluations and freeze dates. Development walk-forward selection and a separate one-use final holdout are implemented; see [evaluation controls](operations.md#chronological-evaluation-and-sealed-final-test). Forward paper observations supply new evidence.
 
-Do not leak validation trades through charts, logs, model caches, partial progress, benchmark ratios, combined-period statistics, error messages, or strategy-produced stdout. Without sandboxing and access control, this remains a cooperative interface rule; native code and agents sharing the filesystem can bypass it.
+Do not leak validation trades through charts, logs, model caches, partial progress, benchmark ratios, combined-period statistics, error messages, or strategy-produced stdout. Mandatory strategy/build sandboxes and the separate-account agent launcher enforce the boundary. Programs run directly as the filesystem owner remain trusted.
 
-Model calls add a separate bias: today's model may know events from historical evaluation periods. Recorded inference responses make replay reproducible but do not erase that knowledge. The user accepts this limitation for v1, including historical ranking. Record model provenance and any unknown training cutoff without excluding the result. Historical performance from such calls is not evidence of point-in-time predictive ability.
+Model calls add a separate bias: today's model may know events from historical evaluation periods. Recorded inference responses make replay reproducible but do not erase that knowledge. The user accepts this limitation, including historical ranking. Record model provenance and any unknown training cutoff without excluding the result. Historical performance from such calls is not evidence of point-in-time predictive ability.
 
 ## Foundation choices
 
@@ -130,7 +130,7 @@ A static book walk assumes visible orders remain available throughout execution.
 
 The available evidence supports an entry-tier commission assumption and a conservative normal-liquidity allowance. It does not support a numerical claim such as “costs are 95% accurate,” or a guarantee that the allowance covers tail execution costs.
 
-## V2 data-source shortlist — checked 4 November 2026
+## Data-source shortlist — checked 4 November 2026
 
 This shortlist records the initial investigation. Kraken was subsequently imported and its documented gaps explicitly accepted for a separate research comparison; see [the completed audit](v2-kraken-audit.json) and [current operations](operations.md#free-kraken-comparison-data).
 

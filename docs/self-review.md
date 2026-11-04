@@ -1,6 +1,6 @@
 # TradeClimb plan self review
 
-Historical V1 planning record. Current behavior and policy are documented in [V2 status](v2.md), [operations](operations.md) and [API](api.md); later decisions supersede proposals here.
+Historical V1 planning record. Current behavior and policy are documented in [status](status.md), [operations](operations.md) and [API](api.md); later decisions supersede proposals here.
 
 This review challenges the proposed v1 against the user's objectives. Corrections described as adopted are already incorporated in the implementation plan. Remaining limitations are explicit review decisions, not work silently deferred past v1 completion.
 

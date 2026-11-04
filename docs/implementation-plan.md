@@ -1,6 +1,6 @@
 # TradeClimb v1 implementation plan
 
-Historical V1 planning record. Current behavior and policy are documented in [V2 status](v2.md), [operations](operations.md) and [API](api.md); later decisions supersede proposals here.
+Historical V1 planning record. Current behavior and policy are documented in [status](status.md), [operations](operations.md) and [API](api.md); later decisions supersede proposals here.
 
 Recommendations accepted on 3 November 2026, with the model-knowledge policy adjusted below. See [research](research.md) for sources and [self-review](self-review.md) for the original risks.
 

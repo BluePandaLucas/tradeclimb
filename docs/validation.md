@@ -42,7 +42,7 @@ Smoke suites use temporary synthetic workspaces and independent ledgers. Test-on
 
 ## Historical evidence
 
-The original [Bitvavo data audit](data-audit.json) records 9,489,303 candles and documented multi-hour gaps. The strict 60-minute coverage gate rejected it; the owner later explicitly accepted gaps for research in a distinct immutable [V2 snapshot](v2-data-audit.json). The separate [Kraken audit](v2-kraken-audit.json) records the independently accepted comparison dataset. Neither source was silently filled or shortened to improve returns.
+The original [Bitvavo data audit](data-audit.json) records 9,489,303 candles and documented multi-hour gaps. The strict 60-minute coverage gate rejected it; the owner later explicitly accepted gaps for research in a distinct immutable [accepted snapshot](v2-data-audit.json). The separate [Kraken audit](v2-kraken-audit.json) records the independently accepted comparison dataset. Neither source was silently filled or shortened to improve returns.
 
 A native 20/100 moving-average throughput fixture processed the full Bitvavo snapshot in 10.8 seconds wall time, including verified loading, with 1.69 GiB peak child RSS on a Ryzen 7 5800X and warm caches. Compilation/import were excluded and risk halting disabled to exercise the full window. It emitted no financial feedback. [Exact measurement](performance.json). External IPC/model strategies have different costs.
 

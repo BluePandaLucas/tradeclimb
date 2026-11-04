@@ -1,10 +1,10 @@
-# Engine choice for the first release
+# Engine choice
 
-Use the TC candle engine behind the SDK contracts for v1. Keep framework adoption open for later execution models.
+Use the TC candle engine behind the SDK contracts. Keep framework adoption open for later execution models.
 
 NautilusTrader 0.67.0's packaged `engine-ema-cross` native Rust example was copied to a temporary directory and run successfully with Rust 1.99.1. Native strategies and backtests work without a Python strategy layer. Its richer order, account, instrument, and venue abstractions are valuable when execution realism becomes the primary task. Its crate license is LGPL-3.0-only and would require a separate licensing decision before adoption.
 
-Barter 0.14.0's `AlgoStrategy` and engine interfaces were inspected. They operate on engine state and generate open/cancel order requests, while TC v1 needs a deliberately narrower target-weight contract, controlled validation outputs, local artifact registration, and a dataset ledger. Neither framework removes those responsibilities.
+Barter 0.14.0's `AlgoStrategy` and engine interfaces were inspected. They operate on engine state and generate open/cancel order requests, while TC needs a deliberately narrower target-weight contract, controlled validation outputs, local artifact registration, and a dataset ledger. Neither framework removes those responsibilities.
 
 The selected scope is spot/cash, market intents, explicit candle assumptions, and simple paper execution. Owning that small accounting surface allows exact hand-calculated tests without exposing another framework in the external SDK. This is not a claim that TC matches either framework's execution coverage. Intrabar stops, order queues, partial fills, and real orders remain outside this engine's supported contract.
 
