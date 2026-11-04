@@ -335,7 +335,7 @@ async fn trades(
     let job = app.store.job(&id)?;
     if job.period == Period::Validation {
         return Err(anyhow::anyhow!(
-            "validation exposes CAGR only; use explicit local owner inspection to reveal details"
+            "validation exposes only the campaign score; use explicit local owner inspection to reveal details"
         )
         .into());
     }
@@ -352,10 +352,16 @@ async fn trades(
     ))
 }
 async fn campaign(State(app): State<Arc<App>>, Json(v): Json<Value>) -> Api<Campaign> {
-    Ok(Json(app.store.campaign_with_target(
-        v["dataset"].as_str().context("dataset required")?,
-        v["target_cagr"].as_f64().unwrap_or(0.15),
-    )?))
+    Ok(Json(
+        app.store.campaign_with_objective(
+            v["dataset"].as_str().context("dataset required")?,
+            v["target_cagr"].as_f64().unwrap_or(0.15),
+            v.get("objective")
+                .map(|v| serde_json::from_value(v.clone()))
+                .transpose()?
+                .unwrap_or(Objective::SharpeDailyV1),
+        )?,
+    ))
 }
 async fn archive(State(app): State<Arc<App>>, RoutePath(id): RoutePath<String>) -> Api<Value> {
     let mut s: RegisteredStrategy = app.store.get("strategy", &id)?;
@@ -399,6 +405,7 @@ fn default_trials() -> usize {
 async fn tune(State(app): State<Arc<App>>, Json(input): Json<Tune>) -> Api<Value> {
     ensure_tune(&input)?;
     let parent: RegisteredStrategy = app.store.get("strategy", &input.strategy)?;
+    let campaign: Campaign = app.store.get("campaign", &input.campaign)?;
     if input.space.is_empty() {
         ensure_tune_kind(&parent.spec.kind)?;
     }
@@ -408,7 +415,7 @@ async fn tune(State(app): State<Arc<App>>, Json(input): Json<Tune>) -> Api<Value
     store.put(
         "tuning",
         &id,
-        &json!({"id":id,"state":"running","seed":input.seed,"trials":input.trials,"strategy":input.strategy,"campaign":input.campaign,"jobs":[]}),
+        &json!({"id":id,"state":"running","seed":input.seed,"trials":input.trials,"strategy":input.strategy,"campaign":input.campaign,"objective":campaign.objective,"jobs":[]}),
     )?;
     tokio::spawn(async move {
         let result = run_tuning(&store, &input, &parent, &id).await;
@@ -518,13 +525,17 @@ async fn run_tuning(
             if ["completed", "failed", "cancelled", "interrupted"].contains(&j.state.as_str()) {
                 let result = j.result.unwrap_or(Value::Null);
                 let score = if result["metrics"]["eligible"].as_bool() == Some(true) {
-                    result["metrics"]["net_cagr"]
+                    result["metrics"][j.objective.metric()]
                         .as_f64()
                         .unwrap_or(f64::NEG_INFINITY)
                 } else {
                     f64::NEG_INFINITY
                 };
-                if score > best + 0.0025 {
+                let minimum_improvement = match j.objective {
+                    Objective::NetCagr => 0.0025,
+                    Objective::SharpeDailyV1 => 0.01,
+                };
+                if score > best + minimum_improvement {
                     best = score;
                     stale = 0;
                 } else {
@@ -587,75 +598,78 @@ mod tests {
     }
     #[tokio::test]
     async fn validation_http_never_loads_local_detail_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path()).unwrap();
-        let strategy = store
-            .register(
-                StrategySpec {
-                    parameters: Default::default(),
-                    name: "Hold".into(),
-                    description: "fixture".into(),
-                    kind: StrategyKind::BuyHold,
-                    markets: vec!["BTC-EUR".into()],
-                },
-                None,
-                None,
+        for objective in [Objective::NetCagr, Objective::SharpeDailyV1] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Store::open(dir.path()).unwrap();
+            let strategy = store
+                .register(
+                    StrategySpec {
+                        parameters: Default::default(),
+                        name: "Hold".into(),
+                        description: "fixture".into(),
+                        kind: StrategyKind::BuyHold,
+                        markets: vec!["BTC-EUR".into()],
+                    },
+                    None,
+                    None,
+                )
+                .unwrap();
+            let campaign = Campaign {
+                objective,
+                target_cagr: 0.15,
+                id: "campaign".into(),
+                dataset: "fixture".into(),
+                development_start: 0,
+                development_end: MINUTE,
+                validation_start: MINUTE,
+                validation_end: 2 * MINUTE,
+            };
+            store.put("campaign", &campaign.id, &campaign).unwrap();
+            let mut job = store
+                .submit(Submission {
+                    strategy: strategy.id,
+                    campaign: campaign.id,
+                    period: Period::Validation,
+                    idempotency_key: "validation".into(),
+                    slippage_bps: None,
+                })
+                .unwrap();
+            job.state = "completed".into();
+            job.result = Some(json!({objective.metric():0.2}));
+            store.update_job(&job).unwrap();
+            save_json(
+                &store.root.join("jobs").join(&job.id).join("result.json"),
+                &json!({"equity":"SECRET","fills":"SECRET"}),
             )
             .unwrap();
-        let campaign = Campaign {
-            target_cagr: 0.15,
-            id: "campaign".into(),
-            dataset: "fixture".into(),
-            development_start: 0,
-            development_end: MINUTE,
-            validation_start: MINUTE,
-            validation_end: 2 * MINUTE,
-        };
-        store.put("campaign", &campaign.id, &campaign).unwrap();
-        let mut job = store
-            .submit(Submission {
-                strategy: strategy.id,
-                campaign: campaign.id,
-                period: Period::Validation,
-                idempotency_key: "validation".into(),
-                slippage_bps: None,
-            })
-            .unwrap();
-        job.state = "completed".into();
-        job.result = Some(json!({"net_cagr":0.2}));
-        store.update_job(&job).unwrap();
-        save_json(
-            &store.root.join("jobs").join(&job.id).join("result.json"),
-            &json!({"equity":"SECRET","fills":"SECRET"}),
-        )
-        .unwrap();
-        for route in [
-            format!("/api/jobs/{}?days=7", job.id),
-            "/api/overview".into(),
-        ] {
+            for route in [
+                format!("/api/jobs/{}?days=7", job.id),
+                "/api/overview".into(),
+            ] {
+                let req = axum::http::Request::builder()
+                    .uri(route)
+                    .header("host", "localhost")
+                    .body(axum::body::Body::empty())
+                    .unwrap();
+                let response = routes(store.clone()).oneshot(req).await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+                    .await
+                    .unwrap();
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                assert!(!text.contains("SECRET"));
+                assert!(!text.contains("\"fills\""));
+            }
             let req = axum::http::Request::builder()
-                .uri(route)
+                .uri(format!("/api/jobs/{}/trades", job.id))
                 .header("host", "localhost")
                 .body(axum::body::Body::empty())
                 .unwrap();
-            let response = routes(store.clone()).oneshot(req).await.unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
-            let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
-                .await
-                .unwrap();
-            let text = String::from_utf8(bytes.to_vec()).unwrap();
-            assert!(!text.contains("SECRET"));
-            assert!(!text.contains("\"fills\""));
+            assert_eq!(
+                routes(store).oneshot(req).await.unwrap().status(),
+                StatusCode::BAD_REQUEST
+            );
         }
-        let req = axum::http::Request::builder()
-            .uri(format!("/api/jobs/{}/trades", job.id))
-            .header("host", "localhost")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(
-            routes(store).oneshot(req).await.unwrap().status(),
-            StatusCode::BAD_REQUEST
-        );
     }
     #[tokio::test]
     async fn dns_rebinding_host_is_rejected() {

@@ -63,16 +63,29 @@ with tempfile.TemporaryDirectory(prefix='tradeclimb-smoke-') as folder:
             assert len(result['result']['fills']) <= 200
             assert len(result['result']['benchmarks']) == 2
         before = request('/api/overview')
+        assert before['campaigns'][0]['objective'] == 'sharpe_daily_v1'
+        assert all(j['objective'] == 'sharpe_daily_v1' for j in before['jobs'])
+        assert all(g['objective'] == 'sharpe_daily_v1' for g in before['leaderboards'])
+        # Zero-variance cash stays unranked rather than receiving an infinite score.
+        ranked = {entry['strategy'] for g in before['leaderboards'] for entry in g['entries']}
+        assert demo['strategies'][0]['strategy'] not in ranked
+        assert all('sharpe' in g['entries'][0] for g in before['leaderboards'])
         assert all('equity' not in (j['result'] or {}) for j in before['jobs'])
         source = demo['strategies'][-1]['strategy']
         submission = dict(strategy=source, campaign=demo['campaign'], period='validation', idempotency_key='smoke-validation')
         validation = request('/api/jobs', submission)
         result = until(lambda: done(validation['id']))
-        assert set(result['result']) == {'net_cagr'}, result
+        assert set(result['result']) == {'sharpe'}, result
         submission['idempotency_key'] = 'smoke-validation-repeat'
         repeated = request('/api/jobs', submission)
         assert repeated['id'] == validation['id']
         assert request('/api/overview')['validation']['used'] == 1
+        legacy = cli('campaign', demo['dataset'], '--objective', 'net_cagr')
+        legacy_job = request('/api/jobs', dict(submission, campaign=legacy['id'], idempotency_key='legacy-validation'))
+        legacy_result = until(lambda: done(legacy_job['id']))
+        assert set(legacy_result['result']) == {'net_cagr'}, legacy_result
+        assert legacy_job['id'] != validation['id']
+        assert request('/api/overview')['validation']['used'] == 2
         try:
             request('/api/jobs/' + validation['id'] + '/trades')
             raise AssertionError('validation trade details exposed')
@@ -131,7 +144,7 @@ with tempfile.TemporaryDirectory(prefix='tradeclimb-smoke-') as folder:
         backup = state / 'backup'
         subprocess.run([str(binary), '--data-dir', str(state / 'data'), 'backup', str(backup)], check=True, capture_output=True)
         restored = subprocess.run([str(binary), '--data-dir', str(backup), 'list'], check=True, capture_output=True, text=True)
-        assert json.loads(restored.stdout)['validation']['used'] == 1
+        assert json.loads(restored.stdout)['validation']['used'] == 2
         # A restored run must not depend on the original artifact location.
         pathlib.Path(external['spec']['kind']['path']).unlink()
         new_run = subprocess.run([str(binary), '--data-dir', str(backup), 'run', '--strategy', external['id'], '--campaign', demo['campaign'], '--key', 'restored-external'], check=True, capture_output=True, text=True)

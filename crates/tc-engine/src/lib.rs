@@ -380,6 +380,47 @@ pub fn backtest(
     progress(candles.len(), candles.len(), &sim)?;
     sim.finish()
 }
+/// Use complete UTC days only. Missing day boundaries invalidate the series;
+/// never fabricate valuations across data gaps. Keep idle/cash days in the sample.
+fn daily_sharpe(points: &[EquityPoint], start: i64, end: i64) -> (Option<f64>, usize) {
+    const DAY: i64 = 86_400_000;
+    let first = start.div_euclid(DAY) * DAY + if start.rem_euclid(DAY) == 0 { 0 } else { DAY };
+    let last = end.div_euclid(DAY) * DAY;
+    if last <= first {
+        return (None, 0);
+    }
+    let mut boundaries = BTreeMap::new();
+    for p in points {
+        if p.time >= first && p.time <= last && p.time.rem_euclid(DAY) == 0 {
+            // Terminal liquidation may replace a mark at the same timestamp.
+            boundaries.insert(p.time, p.equity);
+        }
+    }
+    let mut returns = vec![];
+    let mut time = first;
+    while time < last {
+        let (Some(&before), Some(&after)) = (boundaries.get(&time), boundaries.get(&(time + DAY)))
+        else {
+            return (None, 0);
+        };
+        if !before.is_finite() || !after.is_finite() || before <= 0.0 || after <= 0.0 {
+            return (None, 0);
+        }
+        returns.push(after / before - 1.0);
+        time += DAY;
+    }
+    let n = returns.len();
+    if n < 2 {
+        return (None, n);
+    }
+    let mean = returns.iter().sum::<f64>() / n as f64;
+    let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+    if variance <= f64::EPSILON * f64::EPSILON {
+        return (None, n);
+    }
+    let sharpe = mean / variance.sqrt() * 365.25_f64.sqrt();
+    (sharpe.is_finite().then_some(sharpe), n)
+}
 fn metrics(sim: &Simulator) -> Result<Metrics> {
     let start = number(sim.config.capital);
     let end = sim.equity.last().map_or(start, |p| p.equity);
@@ -454,7 +495,14 @@ fn metrics(sim: &Simulator) -> Result<Metrics> {
     if years < 1.0 {
         warnings.push("less than one year: CAGR is annualized, not a full observed year".into());
     }
+    let (sharpe, sharpe_days) = daily_sharpe(&sim.equity, sim.config.start, sim.config.end);
+    if sharpe.is_none() {
+        warnings.push("daily Sharpe undefined: need at least two complete UTC days, observed boundaries, positive equity, and nonzero return variance".into());
+    }
+    warnings.push("Sharpe uses a zero cash benchmark and conventional sqrt(365.25) annualization; serial correlation and repeated selection can inflate it".into());
     Ok(Metrics {
+        sharpe,
+        sharpe_days,
         net_cagr,
         net_return: end / start - 1.0,
         max_drawdown: sim.max_drawdown,
@@ -555,6 +603,59 @@ pub fn strategy(spec: &StrategySpec) -> Result<Box<dyn Strategy>> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    fn points(values: &[f64]) -> Vec<EquityPoint> {
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, &equity)| EquityPoint {
+                time: i as i64 * 86_400_000,
+                equity,
+                drawdown: 0.0,
+            })
+            .collect()
+    }
+    #[test]
+    fn sharpe_uses_daily_sample_variance_and_includes_cash_days() {
+        // Daily returns +10%, -10%, 0%, +10%: mean .025, sample variance .0091666…
+        let p = points(&[100.0, 110.0, 99.0, 99.0, 108.9]);
+        let (score, days) = daily_sharpe(&p, 0, 4 * 86_400_000);
+        let expected = 0.025 / (0.0275_f64 / 3.0).sqrt() * 365.25_f64.sqrt();
+        assert!((score.unwrap() - expected).abs() < 1e-10);
+        assert_eq!(days, 4);
+    }
+    #[test]
+    fn sharpe_rejects_missing_boundaries_and_degenerate_returns() {
+        let day = 86_400_000;
+        assert_eq!(
+            daily_sharpe(&points(&[100.0, 100.0, 100.0]), 0, 2 * day),
+            (None, 2)
+        );
+        assert_eq!(daily_sharpe(&points(&[100.0, 110.0]), 0, day), (None, 1));
+        assert_eq!(
+            daily_sharpe(&points(&[100.0, 110.0, 0.0]), 0, 2 * day),
+            (None, 0)
+        );
+        let mut p = points(&[100.0, 110.0, 99.0, 108.0]);
+        p.remove(1);
+        assert_eq!(daily_sharpe(&p, 0, 3 * day), (None, 0));
+    }
+    #[test]
+    fn sharpe_excludes_partial_days_and_uses_terminal_liquidation() {
+        let day = 86_400_000;
+        let mut p = points(&[100.0, 110.0, 99.0, 108.0]);
+        let expected = daily_sharpe(&p, day, 3 * day);
+        assert_eq!(daily_sharpe(&p, 1, 3 * day + MINUTE), expected);
+        p.push(EquityPoint {
+            time: 3 * day,
+            equity: 99.0,
+            drawdown: 0.0,
+        });
+        assert_ne!(daily_sharpe(&p, day, 3 * day), expected);
+        assert_eq!(
+            daily_sharpe(&p, day, 3 * day),
+            daily_sharpe(&points(&[100.0, 110.0, 99.0, 99.0]), day, 3 * day)
+        );
+    }
     fn candle(time: i64, price: i64) -> Candle {
         Candle {
             market: "BTC-EUR".into(),
@@ -616,6 +717,16 @@ mod tests {
         .unwrap();
         assert_eq!(report.metrics.net_return, 0.0);
         assert!(report.fills.is_empty());
+        // V1 compressed reports lack these fields and must remain readable.
+        let mut old = serde_json::to_value(&report).unwrap();
+        old["metrics"].as_object_mut().unwrap().remove("sharpe");
+        old["metrics"]
+            .as_object_mut()
+            .unwrap()
+            .remove("sharpe_days");
+        let restored: Report = serde_json::from_value(old).unwrap();
+        assert_eq!(restored.metrics.sharpe, None);
+        assert_eq!(restored.metrics.sharpe_days, 0);
     }
     #[test]
     fn risk_gap_records_breach_without_clamping() {

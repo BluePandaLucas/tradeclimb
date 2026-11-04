@@ -39,6 +39,8 @@ pub struct RegisteredStrategy {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Campaign {
+    #[serde(default)]
+    pub objective: Objective,
     #[serde(default = "initial_target")]
     pub target_cagr: f64,
     pub id: String,
@@ -68,6 +70,8 @@ pub struct Submission {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
+    #[serde(default)]
+    pub objective: Objective,
     pub id: String,
     pub strategy: String,
     pub campaign: String,
@@ -82,6 +86,8 @@ pub struct Job {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkerRequest {
+    #[serde(default)]
+    pub objective: Objective,
     pub id: String,
     pub dataset: String,
     pub spec: StrategySpec,
@@ -233,6 +239,14 @@ impl Store {
         self.campaign_with_target(dataset, 0.15)
     }
     pub fn campaign_with_target(&self, dataset: &str, target_cagr: f64) -> Result<Campaign> {
+        self.campaign_with_objective(dataset, target_cagr, Objective::SharpeDailyV1)
+    }
+    pub fn campaign_with_objective(
+        &self,
+        dataset: &str,
+        target_cagr: f64,
+        objective: Objective,
+    ) -> Result<Campaign> {
         ensure!(
             target_cagr.is_finite() && target_cagr > 0.0 && target_cagr <= 10.0,
             "target CAGR must be a positive fraction at most 10"
@@ -270,8 +284,10 @@ impl Store {
             split,
             end,
             target_cagr,
+            objective,
         ))?);
         let c = Campaign {
+            objective,
             target_cagr,
             id: id.clone(),
             dataset: dataset.into(),
@@ -324,12 +340,18 @@ impl Store {
             config.slippage_bps = bps;
         }
         config.validate()?;
-        let fingerprint = digest(&serde_json::to_vec(&(
-            &strategy.id,
-            &campaign.dataset,
-            &request.period,
-            &config,
-        ))?);
+        let fingerprint_inputs =
+            serde_json::to_vec(&(&strategy.id, &campaign.dataset, &request.period, &config))?;
+        // Preserve V1 cache identities; isolate V2 scoring feedback from old runs.
+        let fingerprint = if campaign.objective == Objective::NetCagr {
+            digest(&fingerprint_inputs)
+        } else {
+            digest(&serde_json::to_vec(&(
+                fingerprint_inputs,
+                &campaign.id,
+                campaign.objective,
+            ))?)
+        };
         let mut db = self.db()?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let existing: Option<(String, String)> = tx
@@ -368,6 +390,7 @@ impl Store {
         ensure!(queued < 200, "job queue full");
         let id = uuid::Uuid::new_v4().to_string();
         let job = Job {
+            objective: campaign.objective,
             id: id.clone(),
             strategy: strategy.id.clone(),
             campaign: campaign.id,
@@ -381,6 +404,7 @@ impl Store {
             config: config.clone(),
         };
         let worker = WorkerRequest {
+            objective: campaign.objective,
             id: id.clone(),
             dataset: campaign.dataset,
             spec: self.resolve_strategy(&strategy)?,
@@ -556,7 +580,8 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
     serde_json::to_writer(&mut zip, &report)?;
     tc_data::atomic_write(&directory.join("report.json.gz"), &zip.finish()?)?;
     let result = if request.period == Period::Validation {
-        json!({"net_cagr":report.metrics.net_cagr})
+        let metrics = serde_json::to_value(&report.metrics)?;
+        json!({request.objective.metric():metrics[request.objective.metric()]})
     } else {
         let mut value = serde_json::to_value(RunView::from_report(&report))?;
         let mut benchmarks = vec![];
@@ -847,6 +872,7 @@ mod tests {
             )
             .unwrap();
         let c = Campaign {
+            objective: Objective::NetCagr,
             target_cagr: 0.15,
             id: "campaign".into(),
             dataset: "fixture".into(),
@@ -866,6 +892,52 @@ mod tests {
             idempotency_key: key.into(),
             slippage_bps: None,
         }
+    }
+    #[test]
+    fn legacy_objectives_are_not_reinterpreted() {
+        let (_dir, store, strategy, campaign) = setup();
+        let c: Campaign = store.get("campaign", &campaign).unwrap();
+        let mut value = serde_json::to_value(c).unwrap();
+        value.as_object_mut().unwrap().remove("objective");
+        let old: Campaign = serde_json::from_value(value).unwrap();
+        assert_eq!(old.objective, Objective::NetCagr);
+        let j = store
+            .submit(request(&strategy, &campaign, "legacy"))
+            .unwrap();
+        let mut value = serde_json::to_value(j).unwrap();
+        value.as_object_mut().unwrap().remove("objective");
+        assert_eq!(
+            serde_json::from_value::<Job>(value).unwrap().objective,
+            Objective::NetCagr
+        );
+    }
+    #[test]
+    fn objective_separates_validation_feedback_but_not_global_budget() {
+        let (_dir, store, strategy, campaign) = setup();
+        let legacy = store
+            .submit(request(&strategy, &campaign, "legacy"))
+            .unwrap();
+        let mut c: Campaign = store.get("campaign", &campaign).unwrap();
+        c.id = "sharpe-campaign".into();
+        c.objective = Objective::SharpeDailyV1;
+        store.put("campaign", &c.id, &c).unwrap();
+        let sharpe = store.submit(request(&strategy, &c.id, "sharpe")).unwrap();
+        assert_ne!(legacy.id, sharpe.id);
+        assert_eq!(sharpe.objective, Objective::SharpeDailyV1);
+        let persisted: WorkerRequest = read_json(
+            &store
+                .root
+                .join("jobs")
+                .join(&sharpe.id)
+                .join("request.json"),
+        )
+        .unwrap();
+        assert_eq!(persisted.objective, Objective::SharpeDailyV1);
+        assert_eq!(
+            store.submit(request(&strategy, &c.id, "again")).unwrap().id,
+            sharpe.id
+        );
+        assert_eq!(store.ledger().unwrap()["used"], 2);
     }
     #[test]
     fn validation_cache_and_idempotency_are_durable() {

@@ -253,8 +253,29 @@ pub struct MonthlyReturn {
     pub net_return: f64,
     pub complete: bool,
 }
+/// Immutable campaign scoring convention. Missing fields in V1 records remain CAGR.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Objective {
+    #[default]
+    NetCagr,
+    SharpeDailyV1,
+}
+impl Objective {
+    pub fn metric(self) -> &'static str {
+        match self {
+            Self::NetCagr => "net_cagr",
+            Self::SharpeDailyV1 => "sharpe",
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Metrics {
+    /// Annualized daily UTC simple-return Sharpe, zero cash benchmark, sample variance.
+    #[serde(default)]
+    pub sharpe: Option<f64>,
+    #[serde(default)]
+    pub sharpe_days: usize,
     pub net_cagr: Option<f64>,
     pub net_return: f64,
     pub max_drawdown: f64,

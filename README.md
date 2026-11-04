@@ -1,6 +1,6 @@
 # TradeClimb
 
-TradeClimb is a Rust platform for researching crypto strategies and paper trading against public Bitvavo data. It includes a Rust strategy SDK, reproducible backtests, bounded tuning, a strategy history book, and a Leptos web interface. Strategy-generating agent orchestration belongs in a separate project. No real orders or account keys are supported.
+TradeClimb is a Rust platform for researching crypto strategies and paper trading against public Bitvavo data. It includes a Rust strategy SDK, reproducible backtests, bounded tuning, a strategy history book, and a Leptos web interface. New research campaigns use daily Sharpe for evaluation; existing campaigns retain their CAGR objective. Strategy-generating agent orchestration belongs in a separate project. No real orders or account keys are supported.
 
 ## Run locally
 

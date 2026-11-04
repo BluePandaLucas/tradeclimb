@@ -4,7 +4,7 @@ Run the server on the same machine as the CLI. The HTTP API has no login and is 
 
 The overview is also streamed as an SSE `snapshot` event every second at `/api/events`. Reconnecting receives a fresh snapshot. Curves are loaded for the selected run, not broadcast for every historic run. Overview snapshots show the latest 50 jobs; the CLI and job endpoint can retrieve an older known ID. SQLite retains the history.
 
-The `leaderboards` array compares completed runs across the full retained history, independently of the recent-job limit. Each group contains `id`, `campaign`, `period`, the exact `config`, and `entries`. A strategy version contributes its latest completed run by creation time (newest database row breaks timestamp ties). Entries with missing or non-finite net CAGR are excluded without falling back to an older run. Entries sort by net CAGR descending; exact ties share a competition rank (1, 1, 3), ordered by strategy ID. Each entry exposes `rank`, `strategy`, `job`, `created_at`, `net_cagr`, and `eligibility`. Archived versions remain ranked; eligibility does not filter rank. Validation uses only its permitted scalar CAGR and reports eligibility as `CAGR only`. Development and validation, different campaigns, and different execution settings never share a ranking.
+The `leaderboards` array compares completed runs across the full retained history, independently of the recent-job limit. Each group contains `id`, `campaign`, `period`, `objective`, the exact `config`, and `entries`. A strategy version contributes its latest completed run by creation time (newest database row breaks timestamp ties). Entries with missing or non-finite objective scores are excluded without falling back to an older run or a different metric. Entries sort by score descending; exact ties share a competition rank (1, 1, 3), ordered by strategy ID. Each entry exposes `rank`, `strategy`, `job`, `created_at`, `score`, the named metric (`sharpe` or legacy `net_cagr`), and `eligibility`. Archived versions remain ranked; eligibility does not filter rank. Validation reports eligibility as `Sharpe only` or legacy `CAGR only`. Different campaigns, objectives, periods, and execution settings never share a ranking.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -25,7 +25,9 @@ The `leaderboards` array compares completed runs across the full retained histor
 
 Paper sessions report `starting`, `running`, `stopping`, `stopped`, or `halted`, plus `activity` and `updated_at`. A stop response may be `stopping`; observe overview/SSE until `stopped` to confirm worker exit. A session stopped before its worker starts goes directly to `stopped`. Starting while this strategy version is still stopping fails; starting after it stops creates a new portfolio.
 
-A campaign creation request may include `target_cagr`, a fraction such as `0.20` for 20%. Objectives are immutable campaign revisions; changing one preserves validation exposure and can reuse an identical cached validation evaluation.
+A campaign creation request defaults to `objective: "sharpe_daily_v1"`. Set `objective: "net_cagr"` explicitly for a legacy-style campaign. Unknown objectives fail. `target_cagr` remains a recorded growth aspiration (a fraction such as `0.20` for 20%), not an additional eligibility gate. Objectives are immutable campaign revisions; changing one preserves the global validation ledger. Sharpe feedback never reuses a CAGR-only result. Repeated evaluations within the same Sharpe campaign reuse their cached result. Existing persisted campaigns/jobs/worker requests without an objective remain `net_cagr`; existing reports without Sharpe deserialize with null Sharpe and zero sample days. No historical report is rescored automatically.
+
+Development report metrics include `sharpe` and `sharpe_days`. `sharpe_daily_v1` takes simple returns between observed UTC midnight equity marks, after fees and adverse execution costs, including idle days. It excludes partial days at either edge, uses a fixed zero cash benchmark, sample standard deviation (`n-1`), and multiplies daily mean/standard deviation by `sqrt(365.25)`. The last mark at a duplicate timestamp wins, including terminal liquidation costs. Missing daily boundaries, nonpositive equity, fewer than two daily returns, or effectively zero variance produce null rather than infinity. `sharpe_days` counts usable daily returns (zero for an invalid/missing-boundary series). Full-resolution drawdown and existing eligibility rules remain independent. Conventional annualization assumes no serial correlation; report warnings identify that limitation and repeated-selection bias. This score is not autocorrelation-adjusted or Deflated Sharpe, and two days establish computability, not statistical confidence.
 
 Submit a run using IDs returned by the CLI or overview:
 
@@ -38,13 +40,13 @@ Submit a run using IDs returned by the CLI or overview:
 }
 ```
 
-`period` may be `validation`. Its successful result contains only `net_cagr`, possibly null when undefined. Validation fills and chart routes are restricted. Its cost/risk configuration is frozen. A development submission may include `slippage_bps` for cost stress tests. Reusing an idempotency key with different inputs fails; repeated identical validation evaluations return the existing job without consuming another query.
+`period` may be `validation`. Its successful result contains only `sharpe` for a Sharpe campaign or `net_cagr` for a legacy campaign, possibly null when undefined. Validation fills and chart routes are restricted. Its cost/risk configuration is frozen. A development submission may include `slippage_bps` for cost stress tests. Reusing an idempotency key with different inputs fails; repeated identical validation evaluations return the existing job without consuming another query.
 
 The SQLite validation ledger is global to the data directory, including all campaigns, strategy families, parameter revisions, and objective changes. It starts with ten queries. Failed validation attempts still consume their reserved query. CLI budget extension and owner inspection are audited and never available as web mutations.
 
 ## Numeric tuning
 
-For the built-in moving average, submit `{"strategy":"ID","campaign":"ID","trials":20,"seed":42}` to `/api/tune`. Defaults explore fast windows 5–119 and slow windows above fast through 599. Tuning evaluates development only, stops after 20 trials without a feasible improvement of 0.25 percentage points CAGR, and has a 30-minute deadline and maximum 100 trials.
+For the built-in moving average, submit `{"strategy":"ID","campaign":"ID","trials":20,"seed":42}` to `/api/tune`. Defaults explore fast windows 5–119 and slow windows above fast through 599. Tuning evaluates development only, uses the campaign objective among eligible development results, stops after 20 trials without a feasible improvement of 0.01 Sharpe units (or 0.25 percentage points legacy CAGR), and has a 30-minute deadline and maximum 100 trials.
 
 For a grid or seeded random search over an external strategy's integer parameters:
 
@@ -62,7 +64,7 @@ For a grid or seeded random search over an external strategy's integer parameter
 }
 ```
 
-The immutable strategy specification is provided to the executable in `TC_STRATEGY_SPEC`; parse its `parameters` object before entering `tc_sdk::serve`. `tc_sdk::propose` provides the same bounded grid/random candidate generation for external agents. The UI exposes a basic built-in tuning action; custom spaces use the API. Tuning state and child job IDs appear in the overview. Tuning records retain `strategy`, `campaign`, `trials`, and `jobs` across progress and terminal states; child job membership is published on submission so the UI can group trials before they finish. A service restart leaves unfinished historical runs interrupted; tuning is not automatically resumed.
+The immutable strategy specification is provided to the executable in `TC_STRATEGY_SPEC`; parse its `parameters` object before entering `tc_sdk::serve`. `tc_sdk::propose` provides the same bounded grid/random candidate generation for external agents. The UI exposes a basic built-in tuning action; custom spaces use the API. Tuning state and child job IDs appear in the overview. Tuning records retain `strategy`, `campaign`, `objective`, `trials`, and `jobs` across progress and terminal states; child job membership is published on submission so the UI can group trials before they finish. A service restart leaves unfinished historical runs interrupted; tuning is not automatically resumed.
 
 ## SDK contract
 

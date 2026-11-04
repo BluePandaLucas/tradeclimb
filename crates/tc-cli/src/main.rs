@@ -63,6 +63,8 @@ enum Action {
         dataset: String,
         #[arg(long, default_value_t = 0.15)]
         target_cagr: f64,
+        #[arg(long, default_value = "sharpe_daily_v1", value_parser = ["sharpe_daily_v1", "net_cagr"])]
+        objective: String,
     },
     Run {
         #[arg(long)]
@@ -172,7 +174,7 @@ fn main() -> Result<()> {
                     strategy: s.id.clone(),
                     campaign: campaign.id.clone(),
                     period: Period::Development,
-                    idempotency_key: format!("demo:{}:{}", manifest.id, s.id),
+                    idempotency_key: format!("demo:{}:{}", campaign.id, s.id),
                     slippage_bps: None,
                 })?;
                 strategies.push(serde_json::json!({"strategy":s.id,"job":j.id}));
@@ -231,7 +233,12 @@ fn main() -> Result<()> {
         Action::Campaign {
             dataset,
             target_cagr,
-        } => print(&store.campaign_with_target(&dataset, target_cagr)?),
+            objective,
+        } => print(&store.campaign_with_objective(
+            &dataset,
+            target_cagr,
+            serde_json::from_value(serde_json::json!(objective))?,
+        )?),
         Action::Run {
             strategy,
             campaign,

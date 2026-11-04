@@ -227,10 +227,10 @@ fn App() -> impl IntoView {
     <div class="nav-label">"WORKSPACE"</div><nav id="workspace-navigation">{["Overview","Backtests","Leaderboard","Paper trading","History"].into_iter().enumerate().map(move|(i,name)|view!{<button aria-label=name title=name class:active=move||tab.get()==name on:click=move|_|{tab.set(name.into());selected.set(String::new());}><span class="nav-icon" aria-hidden="true">{["◈","⌁","♜","◉","▤"][i]}</span><span class="nav-text">{name}</span></button>}).collect_view()}</nav>
     <div class="sidebar-bottom"><span class="mode-dot"></span>"Paper only"<p>"Local workspace · trusted code"</p><div class="version">"TC / v0.1"</div></div></aside>
     <main><header class="topbar"><div class="breadcrumb">"Workspace"<span>"/"</span>{move||tab.get()}</div><div class="connection"><span class:offline=move||!online.get() class="live-dot"></span><span class="connection-text">{move||if online.get(){"Connected"}else{"Reconnecting"}}</span><ThemeToggle/><span class="pill">"NO REAL ORDERS"</span></div></header>
-    <div class="content"><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>"Explore ideas. Measure honestly. Keep climbing."</p></div><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());format!("GOAL {} NET CAGR",campaign.map(|c|percent(&c["target_cagr"])).unwrap_or("+15.00%".into()))}}</span>{move||date(&snapshot.get()["time"])}</div></div>
+    <div class="content"><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>"Explore ideas. Measure honestly. Keep climbing."</p></div><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());campaign.map(|c|if is_sharpe(c) {"OBJECTIVE · SHARPE".into()} else {format!("GOAL {} NET CAGR",percent(&c["target_cagr"]))}).unwrap_or("OBJECTIVE · SHARPE".into())}}</span>{move||date(&snapshot.get()["time"])}</div></div>
     <Show when=move||tab.get()=="Backtests"><div class="controls"><label>"Strategy"<select prop:value=move||selected_strategy.get() on:change=move|ev|selected_strategy.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"strategies").into_iter().filter(|s|s["archived"]!=true).collect::<Vec<_>>()} key={|s:&Value|text(s,"id")} children={move |s| view!{<option value=text(&s,"id")>{text(&s["spec"],"name")}</option>}}/></select></label>
-    <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · goal {}",short(&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),percent(&c["target_cagr"]))}</option>}}/></select></label>
-    <label>"Period"<select prop:value=move||period.get() on:change=move|ev|period.set(event_target_value(&ev))><option value="development">"Development"</option><option value="validation">"Validation · CAGR only"</option></select></label>
+    <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · {}",short(&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),score_label(&c))}</option>}}/></select></label>
+    <label>"Period"<select prop:value=move||period.get() on:change=move|ev|period.set(event_target_value(&ev))><option value="development">"Development"</option><option value="validation">"Validation · score only"</option></select></label>
     <button class="primary" on:click=move|_|{let s=snapshot.get();let strategy=if selected_strategy.get().is_empty(){text(&items(&s,"strategies").into_iter().find(|s|s["archived"]!=true).unwrap_or(Value::Null),"id")}else{selected_strategy.get()};let campaign=if selected_campaign.get().is_empty(){text(&items(&s,"campaigns").into_iter().next().unwrap_or(Value::Null),"id")}else{selected_campaign.get()};action("/api/jobs".into(),json!({"strategy":strategy,"campaign":campaign,"period":period.get(),"idempotency_key":format!("web-{}",js_sys::Date::now())}),status);}>"＋ Run backtest"</button>
     </div></Show>
     <div class="statusline" role="status">{move||status.get()}</div>
@@ -297,4 +297,30 @@ fn Chart(
     let benchmark_lines=benchmarks.iter().enumerate().map(|(i,b)|{let points=items(b,"equity").iter().filter_map(|p|Some(format!("{:.2},{:.2}",x(p["time"].as_f64()?),y(p["equity"].as_f64()?)))).collect::<Vec<_>>().join(" ");view!{<polyline points=points fill="none" stroke=if i==0{"#9aabc2"}else{"#c1b49c"} stroke-width="1.6" stroke-dasharray="5 4"/>}}).collect_view();
     let markers=fills.iter().take(200).filter_map(|f|{let time=f["time"].as_f64()?;let nearest=xy.iter().min_by(|a,b|(a.0-time).abs().total_cmp(&(b.0-time).abs()))?;let buy=f["side"]=="buy";let label=format!("{} {} at {}",if buy{"Buy"}else{"Sell"},text(f,"market"),date(&f["time"]));Some(view!{<circle cx=x(time) cy=y(nearest.1) r="3" fill=if buy{"var(--positive)"}else{"var(--negative)"} stroke="var(--surface)" stroke-width="1"><title>{label}</title></circle>})}).collect_view();
     view!{<div class="chart"><div class="chart-title">{label}<span>"EUR · net of execution costs"</span></div><svg viewBox="0 0 1100 305" role="img" aria-label=label><defs><linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#258b6a" stop-opacity="0.13"/><stop offset="100%" stop-color="#258b6a" stop-opacity="0"/></linearGradient></defs>{ticks}<polygon points=area fill="url(#equity-fill)"/>{benchmark_lines}<polyline points=line fill="none" stroke="var(--positive)" stroke-width="2.2" stroke-linejoin="round"/>{markers}<text x="65" y="299" fill="var(--muted)" font-size="11">{date(&points[0]["time"])}</text><text x="925" y="299" fill="var(--muted)" font-size="11">{date(&points[points.len()-1]["time"])}</text></svg><div class="legend"><span>"● Strategy"</span>{benchmarks.into_iter().map(|b|view!{<span>{format!("┄ {}",text(&b,"name"))}</span>}).collect_view()}</div></div>}.into_any()
+}
+
+fn is_sharpe(v: &Value) -> bool {
+    v["objective"] == "sharpe_daily_v1"
+}
+fn score_label(v: &Value) -> &'static str {
+    if is_sharpe(v) { "Sharpe" } else { "Net CAGR" }
+}
+fn score_value(v: &Value, value: &Value) -> String {
+    if is_sharpe(v) {
+        value
+            .as_f64()
+            .map(|n| format!("{n:.3}"))
+            .unwrap_or_else(|| "—".into())
+    } else {
+        percent(value)
+    }
+}
+fn job_score(v: &Value) -> String {
+    let key = if is_sharpe(v) { "sharpe" } else { "net_cagr" };
+    let result = if v["period"] == "validation" {
+        &v["result"]
+    } else {
+        &v["result"]["metrics"]
+    };
+    format!("{} {}", score_label(v), score_value(v, &result[key]))
 }

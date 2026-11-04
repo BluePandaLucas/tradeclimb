@@ -37,7 +37,7 @@ target/release/tc --data-dir var/demo demo
 TC_DATA_DIR=var/demo ./scripts/start
 ```
 
-Strategy evaluations open from any cell in a row; the strategy-name button also supports keyboard navigation. A tuning experiment appears as a compact progress/best-CAGR summary. Individual trials are hidden until **Show individual tuning trials** is checked. The evaluation list shows ten rows per page, and the selected chart remains independent of arriving trials. **Stop tuning** cancels further trials; starting another experiment is disabled while tuning is pending/running.
+Strategy evaluations open from any cell in a row; the strategy-name button also supports keyboard navigation. A tuning experiment appears as a compact progress/best-objective summary. Individual trials are hidden until **Show individual tuning trials** is checked. The evaluation list shows ten rows per page, and the selected chart remains independent of arriving trials. **Stop tuning** cancels further trials; starting another experiment is disabled while tuning is pending/running.
 
 ## Import real Bitvavo data
 
@@ -54,10 +54,10 @@ target/release/tc list
 target/release/tc campaign DATASET_ID
 ```
 
-A full-range campaign evaluates development `[2022-11-01, 2025-11-01)` and validation `[2025-11-01, 2026-11-01)`. Smaller explicitly imported datasets use a 75/25 chronological split, which is useful for platform smoke tests and is not a replacement for four-year research. A new growth objective is explicit:
+A full-range campaign evaluates development `[2022-11-01, 2025-11-01)` and validation `[2025-11-01, 2026-11-01)`. Smaller explicitly imported datasets use a 75/25 chronological split, which is useful for platform smoke tests and is not a replacement for four-year research. New campaigns default to daily Sharpe (`sharpe_daily_v1`); the UI, tuning, and validation feedback follow that campaign objective. Existing campaigns remain on CAGR. Create a legacy-style campaign with an explicit growth aspiration:
 
 ```bash
-target/release/tc campaign DATASET_ID --target-cagr 0.20
+target/release/tc campaign DATASET_ID --objective net_cagr --target-cagr 0.20
 ```
 
 The target is a fraction: `0.20` means 20%. A new objective does not reset the global validation budget or change the simulation's risk/cost rules.
@@ -93,7 +93,7 @@ target/release/tc run --strategy STRATEGY_ID --campaign CAMPAIGN_ID --key valida
 
 The service must be running to execute queued jobs. It defaults to two workers, with a bounded queue and process deadlines. Cost stress tests use development only. Fees default to 25 basis points per fill and historical adverse execution allowance to 10 basis points per fill. These are explicit assumptions, not reconstructed historical fees or measured historical spreads. Current minimum notional and quantity precision are conservative assumed rules in the run configuration; historical rule changes are not reconstructed.
 
-Validation exposes only net CAGR. Ten unique queries are allowed globally per data directory, including all campaigns and strategies. Repeated identical queries reuse the original evaluation. Extending the budget and inspecting details are explicit local owner actions:
+Validation exposes only Sharpe for a new Sharpe campaign, or net CAGR for a legacy campaign. Ten unique queries are allowed globally per data directory, including all campaigns and strategies. Repeated identical queries reuse the original evaluation. Extending the budget and inspecting details are explicit local owner actions:
 
 ```bash
 target/release/tc budget

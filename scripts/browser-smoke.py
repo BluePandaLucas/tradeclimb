@@ -130,15 +130,18 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    rows=page.locator('.leaderboard tbody tr')
    rows.first.wait_for()
    scores=[float(t.replace('%','')) for t in rows.locator('td.numeric').all_text_contents()]
-   assert scores==sorted(scores,reverse=True),'leaderboard is not sorted by returns'
+   assert scores==sorted(scores,reverse=True),'leaderboard is not sorted by objective score'
+   assert rows.count()>0
+   assert page.locator('.leaderboard th').nth(2).inner_text()=='Sharpe'
    choice=comparison.input_value()
-   validation_request=urllib.request.Request(f'http://127.0.0.1:{port}/api/jobs',data=json.dumps({'strategy':initial,'campaign':submitted['jobs'][0]['campaign'],'period':'validation','idempotency_key':'browser-leaderboard-validation'}).encode(),headers={'Content-Type':'application/json'})
+   validation_strategy=next(g for g in submitted['leaderboards'] if g['period']=='development')['entries'][0]['strategy']
+   validation_request=urllib.request.Request(f'http://127.0.0.1:{port}/api/jobs',data=json.dumps({'strategy':validation_strategy,'campaign':submitted['jobs'][0]['campaign'],'period':'validation','idempotency_key':'browser-leaderboard-validation'}).encode(),headers={'Content-Type':'application/json'})
    with urllib.request.urlopen(validation_request) as response:json.load(response)
    page.wait_for_function('Array.from(document.querySelectorAll(".leaderboard select option")).some(o => o.textContent.includes("validation"))')
    assert comparison.input_value()==choice,'comparison changed while new results arrived'
    validation_option=comparison.locator('option').filter(has_text='validation').first.get_attribute('value')
    comparison.select_option(validation_option)
-   page.wait_for_function('Array.from(document.querySelectorAll(".leaderboard tbody td")).some(td => td.textContent === "CAGR only")')
+   page.wait_for_function('Array.from(document.querySelectorAll(".leaderboard tbody td")).some(td => td.textContent === "Sharpe only")')
    assert comparison.input_value()==validation_option
    rows.first.get_by_role('button').click()
    page.get_by_role('heading',name='Run details',exact=True).wait_for()

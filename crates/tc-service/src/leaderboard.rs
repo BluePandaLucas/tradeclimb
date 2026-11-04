@@ -18,7 +18,7 @@ pub(crate) fn groups(store: &Store) -> Result<Vec<Value>> {
 fn rank(jobs: Vec<Job>) -> Vec<Value> {
     let mut groups: BTreeMap<String, (Value, BTreeMap<String, Job>)> = BTreeMap::new();
     for job in jobs.into_iter().filter(|j| j.state == "completed") {
-        let context = json!({"campaign":job.campaign,"period":job.period,"config":job.config});
+        let context = json!({"campaign":job.campaign,"period":job.period,"config":job.config,"objective":job.objective});
         let (_, latest) = groups
             .entry(context.to_string())
             .or_insert_with(|| (context, BTreeMap::new()));
@@ -31,19 +31,20 @@ fn rank(jobs: Vec<Job>) -> Vec<Value> {
     groups.into_iter().filter_map(|(id, (mut context, latest))| {
         let mut entries = latest.into_values().filter_map(|j| {
             let result = j.result.as_ref()?;
+            let metric = j.objective.metric();
             let score = if j.period == Period::Validation {
-                result["net_cagr"].as_f64()?
+                result[metric].as_f64()?
             } else {
-                result["metrics"]["net_cagr"].as_f64()?
+                result["metrics"][metric].as_f64()?
             };
-            score.is_finite().then(|| json!({"strategy":j.strategy,"job":j.id,"created_at":j.created_at,"net_cagr":score,
-                "eligibility":if j.period == Period::Validation {"CAGR only"} else if result["metrics"]["eligible"] == true {"Eligible"} else {"Review"}}))
+            score.is_finite().then(|| json!({"strategy":j.strategy,"job":j.id,"created_at":j.created_at,"score":score,metric:score,
+                "eligibility":if j.period == Period::Validation {if j.objective == Objective::NetCagr {"CAGR only"} else {"Sharpe only"}} else if result["metrics"]["eligible"] == true {"Eligible"} else {"Review"}}))
         }).collect::<Vec<_>>();
-        entries.sort_by(|a,b| b["net_cagr"].as_f64().unwrap_or_default().total_cmp(&a["net_cagr"].as_f64().unwrap_or_default()).then_with(|| a["strategy"].as_str().cmp(&b["strategy"].as_str())));
+        entries.sort_by(|a,b| b["score"].as_f64().unwrap_or_default().total_cmp(&a["score"].as_f64().unwrap_or_default()).then_with(|| a["strategy"].as_str().cmp(&b["strategy"].as_str())));
         let mut position = 0;
         let mut previous = None;
         for (i, entry) in entries.iter_mut().enumerate() {
-            let score = entry["net_cagr"].as_f64();
+            let score = entry["score"].as_f64();
             if score != previous { position = i + 1; }
             previous = score;
             entry["rank"] = json!(position);
@@ -60,6 +61,7 @@ mod tests {
     use super::*;
     fn job(id: &str, strategy: &str, score: Option<f64>) -> Job {
         Job {
+            objective: Objective::NetCagr,
             id: id.into(),
             strategy: strategy.into(),
             campaign: "campaign".into(),
@@ -72,6 +74,46 @@ mod tests {
             result: Some(json!({"metrics":{"net_cagr":score,"eligible":true}})),
             config: RunConfig::new(0, 24 * 60 * MINUTE),
         }
+    }
+    #[test]
+    fn sharpe_ranking_uses_sharpe_and_never_falls_back_to_cagr() -> Result<()> {
+        let mut first = job("a", "a", Some(9.0));
+        first.objective = Objective::SharpeDailyV1;
+        first.result = Some(json!({"metrics":{"sharpe":0.5,"net_cagr":9.0,"eligible":true}}));
+        let mut second = first.clone();
+        second.id = "b".into();
+        second.strategy = "b".into();
+        second.result = Some(json!({"metrics":{"sharpe":1.5,"net_cagr":0.1,"eligible":true}}));
+        let mut missing = first.clone();
+        missing.id = "missing".into();
+        missing.strategy = "missing".into();
+        missing.result = Some(json!({"metrics":{"net_cagr":99.0,"eligible":true}}));
+        let mut validation = first.clone();
+        validation.period = Period::Validation;
+        validation.result =
+            Some(json!({"sharpe":0.8,"metrics":{"net_cagr":99.0},"equity":"SECRET"}));
+        let groups = rank(vec![
+            first,
+            second,
+            missing,
+            validation,
+            job("old", "old", Some(0.2)),
+        ]);
+        assert_eq!(groups.len(), 3);
+        let dev = groups
+            .iter()
+            .find(|g| g["objective"] == "sharpe_daily_v1" && g["period"] == "development")
+            .context("sharpe group")?;
+        assert_eq!(dev["entries"].as_array().context("entries")?.len(), 2);
+        assert_eq!(dev["entries"][0]["strategy"], "b");
+        let val = groups
+            .iter()
+            .find(|g| g["period"] == "validation")
+            .context("validation")?;
+        assert_eq!(val["entries"][0]["sharpe"], 0.8);
+        assert_eq!(val["entries"][0]["eligibility"], "Sharpe only");
+        assert!(!serde_json::to_string(val)?.contains("SECRET"));
+        Ok(())
     }
     #[test]
     fn ranks_latest_completed_versions_with_ties_and_missing_scores() -> Result<()> {
