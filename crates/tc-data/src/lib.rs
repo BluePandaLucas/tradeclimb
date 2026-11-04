@@ -535,6 +535,50 @@ pub fn root_path(path: &str) -> PathBuf {
 mod tests {
     use super::*;
     #[test]
+    fn slices_prune_other_markets_and_months_before_reading() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let start = timestamp("2026-07-31")?;
+        let end = timestamp("2026-08-02")?;
+        let rows = [start, timestamp("2026-08-01")?]
+            .into_iter()
+            .flat_map(|time| {
+                MARKETS.into_iter().map(move |market| Candle {
+                    market: market.into(),
+                    time,
+                    open: 100.into(),
+                    high: 100.into(),
+                    low: 100.into(),
+                    close: 100.into(),
+                    volume: 1.into(),
+                })
+            })
+            .collect();
+        let manifest = snapshot(root.path(), rows, start, end, true, true)?;
+        let directory = root.path().join("datasets").join(&manifest.id);
+        // An unreadable held-out partition and another market must not be opened.
+        for part in &manifest.partitions {
+            if part.path != "BTC-EUR-2026-07.parquet" {
+                fs::remove_file(directory.join(&part.path))?;
+            }
+        }
+        let (_, page) = load_slice(root.path(), &manifest.id, "BTC-EUR", start, start + MINUTE)?;
+        assert_eq!(page.len(), 1);
+        fs::write(directory.join("BTC-EUR-2026-07.parquet"), "tampered")?;
+        assert!(load_slice(root.path(), &manifest.id, "BTC-EUR", start, start + MINUTE).is_err());
+        assert!(load_slice(root.path(), "../escape", "BTC-EUR", start, start + MINUTE).is_err());
+        assert!(
+            load_slice(
+                root.path(),
+                &manifest.id,
+                "BTC-EUR",
+                start,
+                start + 8 * 1440 * MINUTE
+            )
+            .is_err()
+        );
+        Ok(())
+    }
+    #[test]
     fn round_trip_and_tamper_detection() {
         let root = tempfile::tempdir().unwrap();
         let mut rows = vec![];
@@ -636,4 +680,63 @@ mod import_boundary_regression {
         .unwrap();
         assert_eq!(unchanged, original);
     }
+}
+
+/// Verify and prune immutable partitions before reading a bounded research slice.
+pub fn load_slice(
+    root: &Path,
+    id: &str,
+    market: &str,
+    start: i64,
+    end: i64,
+) -> Result<(Manifest, Vec<Candle>)> {
+    ensure!(
+        id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()) && MARKETS.contains(&market),
+        "invalid slice identity"
+    );
+    ensure!(
+        start >= 0 && end > start && end - start <= 7 * 1440 * MINUTE,
+        "slice range must be at most seven days"
+    );
+    let directory = root.join("datasets").join(id);
+    let manifest: Manifest = read_json(&directory.join("manifest.json"))?;
+    let first = DateTime::<Utc>::from_timestamp_millis(start)
+        .context("invalid start")?
+        .format("%Y-%m")
+        .to_string();
+    let last = DateTime::<Utc>::from_timestamp_millis(end - 1)
+        .context("invalid end")?
+        .format("%Y-%m")
+        .to_string();
+    let mut rows = vec![];
+    for part in &manifest.partitions {
+        let path = directory.join(&part.path);
+        ensure!(
+            path.parent() == Some(directory.as_path()),
+            "invalid partition path"
+        );
+        let Some(month) = part
+            .path
+            .strip_prefix(&format!("{market}-"))
+            .and_then(|p| p.strip_suffix(".parquet"))
+        else {
+            continue;
+        };
+        if month < first.as_str() || month > last.as_str() {
+            continue;
+        }
+        ensure!(
+            digest(&fs::read(&path)?) == part.sha256,
+            "dataset checksum mismatch"
+        );
+        let part_rows = read_parquet(&path)?;
+        ensure!(part_rows.len() == part.rows, "partition row mismatch");
+        rows.extend(
+            part_rows
+                .into_iter()
+                .filter(|c| c.market == market && c.time >= start && c.time < end),
+        );
+    }
+    rows.sort_by_key(|c| c.time);
+    Ok((manifest, rows))
 }

@@ -203,6 +203,17 @@ async fn logout(
 }
 fn routes(store: Store) -> Router {
     let protected = Router::new()
+        .route("/api/agent/capabilities", get(agent_capabilities))
+        .route("/api/agent/kit", get(agent_kit))
+        .route("/api/agent/candles", get(agent_candles))
+        .route(
+            "/api/agent/candidates",
+            post(candidate_submit).layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
+        .route("/api/agent/candidates/{id}", get(candidate_status))
+        .route("/api/agent/candidates/{id}/cancel", post(candidate_cancel))
+        .route("/api/agent/jobs/{id}/trace", get(agent_trace))
+        .route("/api/agent/jobs/{id}/diagnostics", get(agent_diagnostics))
         .route("/api/session", get(session))
         .route("/api/logout", post(logout))
         .route("/api/overview", get(overview))
@@ -252,7 +263,7 @@ pub async fn serve(
     );
     let listener = tokio::net::TcpListener::bind(address).await?;
     let _ownership = ServiceOwnership::acquire(&store)?;
-    for kind in ["worker_lease", "paper_lease"] {
+    for kind in ["worker_lease", "paper_lease", "candidate_lease"] {
         for lease in store.objects::<WorkerLease>(kind)? {
             if lease.start.is_some() && process_start(lease.pid) == lease.start {
                 #[cfg(unix)]
@@ -277,6 +288,8 @@ pub async fn serve(
             store.put("paper", &p.id, &p)?;
         }
     }
+    let candidate_store = store.clone();
+    let candidates = tokio::spawn(async move { candidates::supervisor(candidate_store).await });
     let history_store = store.clone();
     let history = tokio::spawn(async move { supervisor(history_store, workers).await });
     let paper_store = store.clone();
@@ -359,9 +372,12 @@ pub async fn serve(
         }
     };
     store.request_shutdown();
-    for task in [history, papers] {
-        if let Err(error) = tokio::time::timeout(Duration::from_secs(6), task).await {
-            tracing::warn!(%error,"background shutdown deadline reached");
+    for task in [history, papers, candidates] {
+        match tokio::time::timeout(Duration::from_secs(6), task).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(error))) => tracing::error!(%error, "background supervisor failed"),
+            Ok(Err(error)) => tracing::error!(%error, "background supervisor task failed"),
+            Err(error) => tracing::warn!(%error, "background shutdown deadline reached"),
         }
     }
     if tokio::time::timeout(Duration::from_secs(2), agent_server)
@@ -496,6 +512,63 @@ async fn job_index(
         .map(|r| Ok(serde_json::from_str::<Value>(&r?)?))
         .collect::<Result<Vec<_>>>()?;
     Ok(Json(rows))
+}
+async fn agent_capabilities(State(app): State<Arc<App>>) -> Api<Value> {
+    Ok(Json(agent_api::capabilities(&app.store)?))
+}
+async fn agent_kit(State(app): State<Arc<App>>) -> Api<Value> {
+    Ok(Json(candidates::kit(&app.store)?))
+}
+async fn agent_candles(
+    State(app): State<Arc<App>>,
+    Query(query): Query<agent_api::CandleQuery>,
+) -> Api<Value> {
+    let store = app.store.clone();
+    Ok(Json(
+        report_work(&app.store, move || agent_api::candles(&store, query)).await?,
+    ))
+}
+async fn candidate_submit(
+    State(app): State<Arc<App>>,
+    Extension(p): Extension<auth::Principal>,
+    Json(input): Json<candidates::CandidateInput>,
+) -> Api<candidates::Candidate> {
+    Ok(Json(candidates::submit(
+        &app.store,
+        input,
+        (p.role == auth::Role::Agent).then_some(p.id.as_str()),
+    )?))
+}
+async fn candidate_status(
+    State(app): State<Arc<App>>,
+    Extension(p): Extension<auth::Principal>,
+    RoutePath(id): RoutePath<String>,
+) -> Api<candidates::Candidate> {
+    Ok(Json(candidates::get(
+        &app.store,
+        &id,
+        (p.role == auth::Role::Agent).then_some(p.id.as_str()),
+    )?))
+}
+async fn candidate_cancel(
+    State(app): State<Arc<App>>,
+    Extension(p): Extension<auth::Principal>,
+    RoutePath(id): RoutePath<String>,
+) -> Api<candidates::Candidate> {
+    Ok(Json(candidates::cancel(
+        &app.store,
+        &id,
+        (p.role == auth::Role::Agent).then_some(p.id.as_str()),
+    )?))
+}
+async fn agent_trace(State(app): State<Arc<App>>, RoutePath(id): RoutePath<String>) -> Api<Value> {
+    Ok(Json(agent_api::trace(&app.store, &id)?))
+}
+async fn agent_diagnostics(
+    State(app): State<Arc<App>>,
+    RoutePath(id): RoutePath<String>,
+) -> Api<Value> {
+    Ok(Json(agent_api::diagnostics(&app.store, &id)?))
 }
 async fn submit(
     State(app): State<Arc<App>>,
@@ -833,6 +906,7 @@ async fn run_tuning(
         let job = auth::submit(
             store,
             Submission {
+                trace: None,
                 strategy: s.id,
                 campaign: input.campaign.clone(),
                 period: Period::Development,
@@ -1102,6 +1176,7 @@ mod tests {
             .unwrap();
         let mut job = store
             .submit(Submission {
+                trace: None,
                 strategy: strategy.id,
                 campaign: campaign.id,
                 period: Period::Validation,
@@ -1153,6 +1228,16 @@ mod tests {
             (
                 "POST",
                 format!("/api/jobs/{}/reveal", job.id),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "GET",
+                format!("/api/agent/jobs/{}/trace", job.id),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "GET",
+                format!("/api/agent/jobs/{}/diagnostics", job.id),
                 StatusCode::FORBIDDEN,
             ),
             ("GET", "/api/jobs/index".into(), StatusCode::OK),
@@ -1245,6 +1330,7 @@ mod tests {
             store.put("campaign", &campaign.id, &campaign).unwrap();
             let mut job = store
                 .submit(Submission {
+                    trace: None,
                     strategy: strategy.id,
                     campaign: campaign.id,
                     period: Period::Validation,

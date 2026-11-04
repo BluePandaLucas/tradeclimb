@@ -4,7 +4,7 @@ Run the server as the filesystem owner on loopback. Every API requires `Authoriz
 
 The owner can use all ordinary endpoints. Agents can read development overviews/events, development job details/trades, submit development jobs, tune, and cancel their own development jobs/controllers. They cannot access validation, paper sessions/approvals, campaign creation, archives, or owner inference scopes. Agent overviews and SSE omit validation/paper data and include development jobs/rankings only. Idempotency keys are namespaced per credential; revocation cancels owned work and closes existing streams. The dedicated agent Unix endpoint accepts agent credentials only and rejects owner sessions/keys and login. The network-isolated launcher exposes its path as `TC_API_SOCKET`, alongside `TC_API_TOKEN_FILE`; there is no host TCP or Internet route in that sandbox.
 
-Code registration and build remain local owner CLI operations. The HTTP API cannot upload or compile source. Candidate source path resolution rejects symlinks and concurrent escapes before code/build scripts enter their sandbox.
+Agents can submit bounded Rust source through the pinned candidate workflow below. Arbitrary local projects and custom dependencies remain owner CLI operations; compile untrusted projects with `tc build`. Source snapshots reject symlinks and concurrent escapes before isolated builds. See the [agent guide](agents.md) for bootstrap, iteration and recovery.
 
 The overview is also streamed as an SSE `snapshot` event every second at `/api/events`. Reconnecting receives a fresh snapshot. Curves are loaded for the selected run, not broadcast for every historic run. Overview snapshots show the latest 50 jobs; the browser fetches `/api/jobs/index` once to search and paginate older summaries, then merges the live feed into that index. SQLite retains the history. The index excludes execution settings, curves, fills, and benchmarks.
 
@@ -12,6 +12,14 @@ The `leaderboards` array compares completed runs across the full retained histor
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/api/agent/capabilities` | Machine-readable platform, tools, limits and policy |
+| GET | `/api/agent/kit` | Pinned public SDK, Rust template, client and author guide |
+| POST | `/api/agent/candidates` | Submit bounded source for offline build/preflight/immutable registration |
+| GET | `/api/agent/candidates/{id}` | Candidate state and bounded compiler/preflight diagnostics; submitting credential or owner |
+| POST | `/api/agent/candidates/{id}/cancel` | Cancel candidate; safe to repeat |
+| GET | `/api/agent/candles` | Bounded, checksum-verified development candle slice |
+| GET | `/api/agent/jobs/{id}/trace` | Requested development frame/decision/fill trace |
+| GET | `/api/agent/jobs/{id}/diagnostics` | Development metrics, runtime failure and trace metadata |
 | GET | `/api/overview` | Strategies, campaigns, recent jobs, leaderboards, paper sessions, datasets, tuning status, validation ledger |
 | GET | `/api/events` | SSE overview snapshots; validation includes no curves or granular progress |
 | POST | `/api/jobs` | Submit a registered strategy to a fixed campaign |
@@ -20,7 +28,7 @@ The `leaderboards` array compares completed runs across the full retained histor
 | GET | `/api/jobs/{id}?days=7` | Permitted chart detail, resampled from full equity; also 30 or 90 days |
 | GET | `/api/jobs/{id}/trades?offset=0&limit=100` | Exact permitted fills; maximum page size 1,000 |
 | POST | `/api/jobs/{id}/reveal` | Owner explicitly opens completed validation metrics, curves and trades; records revelation without another evaluation |
-| POST | `/api/jobs/{id}/cancel` | Cancel a queued/running job and terminate its process group |
+| POST | `/api/jobs/{id}/cancel` | Cancel a queued/running job and terminate its process group; terminal calls are safe to repeat |
 | POST | `/api/campaigns` | Create/retrieve a campaign for an accepted immutable dataset |
 | POST | `/api/strategies/{id}/archive` | Toggle archive status; preserve old versions and runs |
 | POST | `/api/tune` | Bounded development parameter search |
@@ -51,6 +59,18 @@ Submit a run using IDs returned by the CLI or overview:
 `period` may be `validation`. Its successful result contains only `sharpe` for a Sharpe campaign or `net_cagr` for a legacy campaign, possibly null when undefined. Ordinary validation summaries remain scalar. Owner `POST /api/jobs/{id}/reveal` records the reveal and returns full detail; subsequent owner detail/window/trade requests are allowed for that job. Agents remain development-only even after a reveal. Owner detail carries `owner_detail: true`; the history index, snapshots and stored ranking summaries keep scalar validation results. Its cost/risk configuration is frozen. A development submission may include `slippage_bps` for cost stress tests. Reusing an idempotency key with different inputs fails; repeated identical validation evaluations return the existing job without consuming another query.
 
 The SQLite validation ledger is global to the data directory, including all campaigns, strategy families, parameter revisions, and objective changes. It starts with ten queries. Failed validation attempts still consume their reserved query. Budget extension remains an audited local CLI action. Owner inspection through the CLI or the authenticated reveal endpoint is audited, sets the global revealed flag, and does not spend another validation query. The final-test reservation is enforced before any reveal.
+
+## Agent source and debugging tools
+
+`POST /api/agent/candidates` requires `platform`, `idempotency_key`, `name`, `markets` and `files` (a map of relative Rust source paths to UTF-8 text). Optional fields are `description`, `parent`, `parameters` and `model_fixtures` (logical capability to synthetic response text). Unknown fields fail. The platform comes from kit/capabilities. Only `src/**/*.rs` is accepted; source is limited to 64 files, 64 KiB each and 256 KiB total. The route accepts at most 2 MiB JSON; other request bodies retain the 64-KiB limit. Custom manifests/build scripts/dependencies are not accepted.
+
+An accepted request returns immediately with a candidate ID. Poll it through `queued` → `building` → `preflight` to `completed`, `failed`, `cancelled` or `interrupted`. Completion supplies the immutable `strategy` ID and synthetic preflight evidence; failures supply `diagnostic.code`, `message` and bounded compiler `log`. The fixture runs regular/gapped causal bars twice and checks decision replay. It uses declared model fixtures only and is not a performance test. Idempotency is credential-scoped and rejects changed inputs under the same key. Revocation/cancellation is rechecked atomically before registration. Active work is interrupted on restart; it is not silently resubmitted.
+
+`GET /api/agent/candles?campaign=ID&market=BTC-EUR&start=UTC_MS&end=UTC_MS&limit=1000` accepts minute-aligned `[start,end)` entirely inside development, at most seven days and 2,000 returned rows. Responses contain dataset/venue, `candles`, `next_start` (or null), observed/missing minute counts, synthetic status and notes. Continue with `start=next_start` and the same end. Decimal prices/volume are strings. Source partitions are pruned by market/month before loading; matching partitions are checksum-verified. The global reserved window is rejected even for legacy campaigns.
+
+Development submissions may add `"trace":{"start":UTC_MS,"end":UTC_MS,"max_frames":256}`. The range must lie inside that job; maximum 512 frames and 2 MiB. The stored trace contains current completed candles, portfolio, intents, fills since the previous frame, pending intents, halt/stale state and errors. `time` is bar close and `bar_start` is bar open; fills precede the current decision. `truncated` signals omitted later frames. Request a narrower window to inspect later behavior. Traces are optional, do not affect scoring and cannot be requested for validation. Both trace and diagnostics endpoints enforce development independently of owner validation revelation.
+
+Candidate diagnostics include `compile_failed`, `build_timeout`, `build_failed`, `preflight_failed` and `worker_interrupted`. Development runtime diagnostics distinguish `strategy_timeout`, `strategy_exit`, `protocol_error`, `invalid_intent` and fallback `evaluation_error`, with bounded stderr where available. Normal HTTP errors retain `{ "error": "message" }` and a status code. Use capabilities for current limits and the [client guide](agents.md#client-and-recovery) for retries, cancellation and polling.
 
 ## Numeric tuning
 

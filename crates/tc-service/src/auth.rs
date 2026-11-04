@@ -134,6 +134,7 @@ pub fn revoke_agent(store: &Store, id: &str) -> Result<()> {
             serde_json::to_string(&json!({"action":"revoke_agent","id":id,"time":now()}))?
         ],
     )?;
+    tx.execute("UPDATE objects SET data=json_set(data,'$.state','cancelled','$.updated_at',?1) WHERE kind='candidate' AND json_extract(data,'$.agent')=?2 AND json_extract(data,'$.state') IN ('queued','building','preflight')",params![now(),id])?;
     tx.commit()?;
     Ok(())
 }
@@ -275,6 +276,40 @@ pub(crate) fn allowed(store: &Store, principal: &Principal, method: &str, path: 
     if method == "POST" && matches!(path, "/api/jobs" | "/api/tune") {
         return true;
     }
+    if method == "GET"
+        && matches!(
+            path,
+            "/api/agent/capabilities" | "/api/agent/kit" | "/api/agent/candles"
+        )
+        || method == "POST" && path == "/api/agent/candidates"
+    {
+        return true;
+    }
+    if let Some(tail) = path.strip_prefix("/api/agent/candidates/") {
+        let mut parts = tail.split('/');
+        let id = parts.next().unwrap_or_default();
+        let action = parts.next();
+        if parts.next().is_some() {
+            return false;
+        }
+        return store
+            .get::<candidates::Candidate>("candidate", id)
+            .is_ok_and(|c| c.agent.as_deref() == Some(principal.id.as_str()))
+            && (method == "GET" && action.is_none()
+                || method == "POST" && action == Some("cancel"));
+    }
+    if method == "GET"
+        && let Some(tail) = path.strip_prefix("/api/agent/jobs/")
+    {
+        let mut parts = tail.split('/');
+        let id = parts.next().unwrap_or_default();
+        let action = parts.next();
+        return parts.next().is_none()
+            && matches!(action, Some("trace" | "diagnostics"))
+            && store.job(id).is_ok_and(|j| {
+                j.period == Period::Development && !overlaps_final(j.config.start, j.config.end)
+            });
+    }
     if let Some(tail) = path.strip_prefix("/api/jobs/") {
         let mut parts = tail.split('/');
         let id = parts.next().unwrap_or_default();
@@ -352,6 +387,7 @@ mod tests {
             )
             .unwrap();
         let request = Submission {
+            trace: None,
             strategy: s.id,
             campaign: c.id,
             period: Period::Development,

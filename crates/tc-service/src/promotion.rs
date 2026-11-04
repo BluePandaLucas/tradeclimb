@@ -125,6 +125,7 @@ mod tests {
             .unwrap();
         let mut job = store
             .submit(Submission {
+                trace: None,
                 strategy: strategy.id.clone(),
                 campaign: campaign.id.clone(),
                 period: Period::Development,

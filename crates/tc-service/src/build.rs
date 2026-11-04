@@ -3,6 +3,34 @@ use std::process::Stdio;
 
 /// Snapshot only regular source files; never execute Cargo/build scripts on the host.
 pub fn build_strategy(project: &Path, sdk: &Path, bin: &str, output: &Path) -> Result<Value> {
+    build_inner(project, sdk, bin, output, false)
+}
+#[derive(Debug)]
+pub(crate) struct BuildFailure {
+    pub code: &'static str,
+    pub diagnostics: String,
+}
+impl std::fmt::Display for BuildFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.code)
+    }
+}
+impl std::error::Error for BuildFailure {}
+pub(crate) fn build_captured(
+    project: &Path,
+    sdk: &Path,
+    bin: &str,
+    output: &Path,
+) -> Result<Value> {
+    build_inner(project, sdk, bin, output, true)
+}
+fn build_inner(
+    project: &Path,
+    sdk: &Path,
+    bin: &str,
+    output: &Path,
+    capture: bool,
+) -> Result<Value> {
     let staging = tempfile::tempdir()?;
     let source = staging.path().join("source");
     snapshot(project, &source)?;
@@ -34,8 +62,28 @@ pub fn build_strategy(project: &Path, sdk: &Path, bin: &str, output: &Path) -> R
         .command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(if capture {
+            Stdio::piped()
+        } else {
+            Stdio::inherit()
+        });
     let mut child = sandbox.spawn()?;
+    let diagnostics = child.child.stderr.take().map(|mut stream| {
+        std::thread::spawn(move || {
+            let mut kept = Vec::new();
+            let mut buffer = [0; 8192];
+            loop {
+                match stream.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let keep = n.min(65_536_usize.saturating_sub(kept.len()));
+                        kept.extend_from_slice(&buffer[..keep]);
+                    }
+                }
+            }
+            String::from_utf8_lossy(&kept).into_owned()
+        })
+    });
     let mut bytes = Vec::new();
     // Bound host memory even if the build tries to return an enormous artifact.
     child
@@ -50,10 +98,23 @@ pub fn build_strategy(project: &Path, sdk: &Path, bin: &str, output: &Path) -> R
         "compiled artifact exceeds 64 MiB"
     );
     let status = child.child.wait()?;
-    ensure!(
-        status.success(),
-        "isolated build failed; dependencies must be cached and the lockfile frozen"
-    );
+    let diagnostics = diagnostics
+        .map(|t| {
+            t.join()
+                .unwrap_or_else(|_| "diagnostic reader failed".into())
+        })
+        .unwrap_or_default();
+    if !status.success() {
+        return Err(BuildFailure {
+            code: if status.code() == Some(124) {
+                "build_timeout"
+            } else {
+                "compile_failed"
+            },
+            diagnostics,
+        }
+        .into());
+    }
     ensure!(
         bytes.starts_with(b"\x7fELF"),
         "build did not produce a Linux executable"
@@ -65,7 +126,7 @@ pub fn build_strategy(project: &Path, sdk: &Path, bin: &str, output: &Path) -> R
         fs::set_permissions(output, fs::Permissions::from_mode(0o755))?;
     }
     Ok(
-        json!({"output":output,"sha256":digest(&bytes),"bytes":bytes.len(),"sandbox":"bubblewrap-cgroup-v1","network":"none","offline":true}),
+        json!({"output":output,"sha256":digest(&bytes),"bytes":bytes.len(),"sandbox":"bubblewrap-cgroup-v1","network":"none","offline":true,"diagnostics":diagnostics}),
     )
 }
 fn snapshot(from: &Path, to: &Path) -> Result<()> {

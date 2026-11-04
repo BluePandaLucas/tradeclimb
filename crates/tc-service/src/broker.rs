@@ -19,6 +19,19 @@ pub(crate) struct ModelBroker {
 #[cfg(unix)]
 impl ModelBroker {
     pub fn start(store: Store, scope: &str) -> Result<Self> {
+        Self::start_mode(store, scope, None)
+    }
+    pub fn fixtures(
+        store: Store,
+        fixtures: std::collections::BTreeMap<String, String>,
+    ) -> Result<Self> {
+        Self::start_mode(store, "synthetic-preflight", Some(fixtures))
+    }
+    fn start_mode(
+        store: Store,
+        scope: &str,
+        fixtures: Option<std::collections::BTreeMap<String, String>>,
+    ) -> Result<Self> {
         let directory = tempfile::tempdir()?;
         let listener = UnixListener::bind(directory.path().join("model.sock"))?;
         listener.set_nonblocking(true)?;
@@ -29,6 +42,8 @@ impl ModelBroker {
             .enable_all()
             .build()?;
         let thread = std::thread::spawn(move || {
+            let mut fixture_cache =
+                std::collections::BTreeMap::<String, tc_sdk::ModelResponse>::new();
             while !cancelled.load(Ordering::Acquire) {
                 let (mut stream, _) = match listener.accept() {
                     Ok(v) => v,
@@ -49,6 +64,36 @@ impl ModelBroker {
                     let mut bytes = vec![0; length];
                     read_deadline(&mut stream, &mut bytes, deadline)?;
                     let request: tc_sdk::ModelRequest = serde_json::from_slice(&bytes)?;
+                    if let Some(fixtures) = &fixtures {
+                        ensure!(
+                            request.max_tokens > 0
+                                && request.max_tokens <= 2048
+                                && request.prompt.len() <= 32768,
+                            "model limits exceeded"
+                        );
+                        let key = digest(&serde_json::to_vec(&request)?);
+                        if let Some(response) = fixture_cache.get(&key) {
+                            return Ok(response.clone());
+                        }
+                        ensure!(fixture_cache.len() < 64, "preflight model budget exhausted");
+                        let text = if request.capability == "fake" && !fixtures.contains_key("fake")
+                        {
+                            request.prompt.clone()
+                        } else {
+                            fixtures
+                                .get(&request.capability)
+                                .context("declare a synthetic model fixture for this capability")?
+                                .clone()
+                        };
+                        let response = tc_sdk::ModelResponse {
+                            text,
+                            provider: "synthetic-fixture".into(),
+                            model: request.capability,
+                            training_cutoff: None,
+                        };
+                        fixture_cache.insert(key, response.clone());
+                        return Ok(response);
+                    }
                     runtime.block_on(async {
                         tokio::select! {
                             result = infer(&store, inference::InferenceRequest {scope: scope.clone(), request}) => result,
@@ -63,9 +108,11 @@ impl ModelBroker {
                     Ok(_) => tc_sdk::ModelReply::Error("model response exceeds size limit".into()),
                     Err(error) => {
                         tracing::warn!(scope, error=%error, "sandbox model call rejected");
-                        tc_sdk::ModelReply::Error(
-                            "model call rejected or failed; inspect the owner log".into(),
-                        )
+                        tc_sdk::ModelReply::Error(if fixtures.is_some() {
+                            error.to_string()
+                        } else {
+                            "model call rejected or failed; inspect the owner log".into()
+                        })
                     }
                 };
                 if let Ok(bytes) = serde_json::to_vec(&reply) {
@@ -130,6 +177,47 @@ fn read_deadline(
 mod tests {
     use super::*;
     use tc_sdk::{ModelClient, ModelRequest, SocketModelClient};
+    #[test]
+    fn preflight_uses_only_declared_fixtures_without_inference_records() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let store = Store::open(dir.path())?;
+        let broker = ModelBroker::fixtures(
+            store.clone(),
+            std::collections::BTreeMap::from([("research".into(), "synthetic".into())]),
+        )?;
+        let mut client = SocketModelClient {
+            path: broker.path().join("model.sock"),
+        };
+        let mut request = ModelRequest {
+            capability: "research".into(),
+            prompt: "unknown".into(),
+            max_tokens: 10,
+        };
+        assert_eq!(client.infer(&request)?.provider, "synthetic-fixture");
+        assert_eq!(client.infer(&request)?.text, "synthetic");
+        request.capability = "undeclared".into();
+        assert!(
+            client
+                .infer(&request)
+                .unwrap_err()
+                .to_string()
+                .contains("declare a synthetic model fixture")
+        );
+        request.capability = "fake".into();
+        for i in 0..63 {
+            request.prompt = i.to_string();
+            client.infer(&request)?;
+        }
+        request.prompt = "exhausted".into();
+        assert!(client.infer(&request).is_err());
+        request.prompt = "0".into();
+        assert_eq!(client.infer(&request)?.text, "0");
+        let count: i64 = store
+            .db()?
+            .query_row("SELECT COUNT(*) FROM model_cache", [], |r| r.get(0))?;
+        assert_eq!(count, 0);
+        Ok(())
+    }
     fn scope(store: &Store) -> String {
         let s = store
             .register(

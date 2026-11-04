@@ -31,6 +31,7 @@ jobs:
           agent_test_data=$(mktemp -d)
           ./scripts/setup-agent "$agent_test_data"
           python3 scripts/security-smoke.py --agent-account tc-agent
+          python3 scripts/agent-smoke.py --agent-account tc-agent
           rm -rf "$agent_test_data"
   dependencies:
     runs-on: ubuntu-latest

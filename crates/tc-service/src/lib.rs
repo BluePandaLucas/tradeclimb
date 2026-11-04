@@ -1,7 +1,9 @@
 //! Local control plane: durable jobs, validation ledger, and paper portfolios.
+pub mod agent_api;
 pub mod auth;
 mod broker;
 mod build;
+pub mod candidates;
 mod comparison;
 mod evaluation;
 mod http;
@@ -93,6 +95,8 @@ pub enum Period {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Submission {
+    #[serde(default)]
+    pub trace: Option<agent_api::TraceRequest>,
     pub strategy: String,
     pub campaign: String,
     pub period: Period,
@@ -118,6 +122,8 @@ pub struct Job {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkerRequest {
+    #[serde(default)]
+    pub trace: Option<agent_api::TraceRequest>,
     #[serde(default)]
     pub objective: Objective,
     pub id: String,
@@ -212,6 +218,19 @@ impl Store {
         parent: Option<String>,
         project: Option<&Path>,
     ) -> Result<RegisteredStrategy> {
+        let registered = self.retain_strategy(spec, parent, project)?;
+        if let Ok(existing) = self.get::<RegisteredStrategy>("strategy", &registered.id) {
+            return Ok(existing);
+        }
+        self.put("strategy", &registered.id, &registered)?;
+        Ok(registered)
+    }
+    fn retain_strategy(
+        &self,
+        spec: StrategySpec,
+        parent: Option<String>,
+        project: Option<&Path>,
+    ) -> Result<RegisteredStrategy> {
         spec.validate()?;
         if let Some(id) = &parent {
             let _: RegisteredStrategy = self.get("strategy", id)?;
@@ -267,7 +286,6 @@ impl Store {
             source_hash,
             archived: false,
         };
-        self.put("strategy", &id, &registered)?;
         Ok(registered)
     }
     pub fn resolve_strategy(&self, registered: &RegisteredStrategy) -> Result<StrategySpec> {
@@ -415,8 +433,19 @@ impl Store {
         }
         config.validate()?;
         ensure_research_window(config.start, config.end)?;
-        let fingerprint_inputs =
+        if let Some(trace) = &request.trace {
+            ensure!(
+                request.period == Period::Development,
+                "traces require development"
+            );
+            trace.validate(&config)?;
+        }
+        let mut fingerprint_inputs =
             serde_json::to_vec(&(&strategy.id, &campaign.dataset, &request.period, &config))?;
+        if let Some(trace) = &request.trace {
+            fingerprint_inputs.extend(serde_json::to_vec(trace)?);
+        }
+
         // Preserve V1 cache identities; isolate V2 scoring feedback from old runs.
         let fingerprint = if campaign.objective == Objective::NetCagr {
             digest(&fingerprint_inputs)
@@ -487,6 +516,7 @@ impl Store {
             config: config.clone(),
         };
         let worker = WorkerRequest {
+            trace: request.trace.clone(),
             objective: campaign.objective,
             id: id.clone(),
             dataset: campaign.dataset,
@@ -557,6 +587,9 @@ impl Store {
     }
     pub fn cancel(&self, id: &str) -> Result<Job> {
         let mut j = self.job(id)?;
+        if ["cancelled", "completed", "failed", "interrupted"].contains(&j.state.as_str()) {
+            return Ok(j);
+        }
         ensure!(
             ["queued", "preparing", "running"].contains(&j.state.as_str()),
             "job is not active"
@@ -580,7 +613,7 @@ impl Store {
         backup.run_to_completion(100, Duration::from_millis(10), None)?;
         drop(backup);
         target.execute(
-            "DELETE FROM objects WHERE kind IN ('service_owner','worker_lease','paper_lease')",
+            "DELETE FROM objects WHERE kind IN ('service_owner','worker_lease','paper_lease','candidate_lease')",
             [],
         )?;
         for name in [
@@ -589,6 +622,8 @@ impl Store {
             "jobs",
             "evaluations",
             "final-test",
+            "platforms",
+            "candidates",
         ] {
             copy_tree(&self.root.join(name), &destination.join(name))?;
         }
@@ -729,7 +764,8 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
         _ => tc_engine::strategy(&request.spec)?,
     };
     let mut last = Instant::now() - Duration::from_secs(1);
-    let report = tc_engine::backtest(
+    let mut trace = agent_api::TraceCollector::new(request.trace.clone());
+    let outcome = tc_engine::backtest_with_observer(
         &relevant,
         request.config,
         strategy.as_mut(),
@@ -745,7 +781,23 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
             }
             Ok(())
         },
-    )?;
+        |frame, intents, sim, error| trace.observe(frame, intents, sim, error),
+    );
+    if request.period == Period::Development {
+        trace.save(&directory.join("trace.json"))?;
+        if let Err(error) = &outcome {
+            let code = error
+                .downcast_ref::<tc_engine::ExecutionFailure>()
+                .map(|e| e.code)
+                .unwrap_or("evaluation_error");
+            save_json(
+                &directory.join("diagnostic.json"),
+                &json!({"code":code,"message":error.to_string().chars().take(2000).collect::<String>()}),
+            )?;
+        }
+    }
+    let report = outcome?;
+
     let mut zip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     serde_json::to_writer(&mut zip, &report)?;
     tc_data::atomic_write(&directory.join("report.json.gz"), &zip.finish()?)?;
@@ -1032,12 +1084,26 @@ mod tests {
     }
     fn request(strategy: &str, campaign: &str, key: &str) -> Submission {
         Submission {
+            trace: None,
             strategy: strategy.into(),
             campaign: campaign.into(),
             period: Period::Validation,
             idempotency_key: key.into(),
             slippage_bps: None,
         }
+    }
+    #[test]
+    fn validation_trace_is_rejected_before_query_reservation() {
+        let (_dir, store, strategy, campaign) = setup();
+        let mut input = request(&strategy, &campaign, "trace-denied");
+        input.trace = Some(agent_api::TraceRequest {
+            start: 10 * MINUTE,
+            end: 20 * MINUTE,
+            max_frames: 1,
+        });
+        assert!(store.submit(input).is_err());
+        assert_eq!(store.ledger().unwrap()["used"], 0);
+        assert!(store.jobs().unwrap().is_empty());
     }
     #[test]
     fn post_holdout_warmup_never_delivers_reserved_candles() {
@@ -1098,6 +1164,7 @@ mod tests {
         assert!(
             store
                 .submit(Submission {
+                    trace: None,
                     period: Period::Development,
                     ..request
                 })

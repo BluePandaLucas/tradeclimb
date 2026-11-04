@@ -328,6 +328,33 @@ pub fn backtest(
     strategy: &mut dyn Strategy,
     mut progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
 ) -> Result<Report> {
+    backtest_with_observer(
+        candles,
+        config,
+        strategy,
+        &mut progress,
+        |_, _, _, _| Ok(()),
+    )
+}
+#[derive(Debug)]
+pub struct ExecutionFailure {
+    pub code: &'static str,
+    pub message: String,
+}
+impl std::fmt::Display for ExecutionFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+impl std::error::Error for ExecutionFailure {}
+/// Observer sees the completed frame, current decision, and fills from earlier decisions.
+pub fn backtest_with_observer(
+    candles: &[Candle],
+    config: RunConfig,
+    strategy: &mut dyn Strategy,
+    mut progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
+    mut observer: impl FnMut(&Frame, &[Intent], &Simulator, Option<&str>) -> Result<()>,
+) -> Result<Report> {
     let mut sim = Simulator::new(config)?;
     let mut index = 0;
     let mut previous = None;
@@ -360,10 +387,24 @@ pub fn backtest(
             portfolio: sim.portfolio.clone(),
             warmup,
         };
-        let intents = strategy.on_frame(&frame)?;
-        if !warmup {
-            sim.queue(intents, time + MINUTE)?;
+        let intents = match strategy.on_frame(&frame) {
+            Ok(v) => v,
+            Err(error) => {
+                let message = error.to_string();
+                observer(&frame, &[], &sim, Some(&message))?;
+                return Err(error);
+            }
+        };
+        if !warmup && let Err(error) = sim.queue(intents.clone(), time + MINUTE) {
+            let message = error.to_string();
+            observer(&frame, &intents, &sim, Some(&message))?;
+            return Err(ExecutionFailure {
+                code: "invalid_intent",
+                message,
+            }
+            .into());
         }
+        observer(&frame, &intents, &sim, None)?;
         if index % 2_000 < group.len() {
             progress(index, candles.len(), &sim)?;
         }
@@ -580,8 +621,27 @@ pub struct ProcessStrategy {
     sandbox: tc_sandbox::SandboxedChild,
     request: mpsc::Sender<Frame>,
     response: mpsc::Receiver<Result<Decision>>,
+    diagnostics: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    diagnostics_done: mpsc::Receiver<()>,
 }
 impl ProcessStrategy {
+    fn failure_message(&self, message: &str) -> String {
+        // On exit, let the bounded stderr drain finish before reporting the error.
+        // A live/stalled process cannot hold failure handling open indefinitely.
+        let _ = self
+            .diagnostics_done
+            .recv_timeout(Duration::from_millis(100));
+        let log = self
+            .diagnostics
+            .lock()
+            .map(|v| String::from_utf8_lossy(&v).into_owned())
+            .unwrap_or_default();
+        if log.is_empty() {
+            message.into()
+        } else {
+            format!("{message}; stderr: {log}")
+        }
+    }
     pub fn process_id(&self) -> u32 {
         self.sandbox.child.id()
     }
@@ -602,8 +662,30 @@ impl ProcessStrategy {
             .command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         let mut child = sandbox.spawn()?;
+        let diagnostics = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (diagnostics_end, diagnostics_done) = mpsc::channel();
+        if let Some(mut stderr) = child.child.stderr.take() {
+            let kept = diagnostics.clone();
+            std::thread::spawn(move || {
+                use std::io::Read;
+                let mut bytes = [0; 4096];
+                loop {
+                    match stderr.read(&mut bytes) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            if let Ok(mut log) = kept.lock() {
+                                log.extend_from_slice(&bytes[..n]);
+                                let remove = log.len().saturating_sub(8192);
+                                log.drain(..remove);
+                            }
+                        }
+                    }
+                }
+                let _ = diagnostics_end.send(());
+            });
+        }
         let mut input = child
             .child
             .stdin
@@ -630,14 +712,52 @@ impl ProcessStrategy {
             sandbox: child,
             request: tx,
             response,
+            diagnostics,
+            diagnostics_done,
         })
     }
 }
 impl Strategy for ProcessStrategy {
     fn on_frame(&mut self, frame: &Frame) -> Result<Vec<Intent>> {
-        self.request.send(frame.clone())?;
-        let reply = self.response.recv_timeout(Duration::from_secs(45))??;
-        ensure!(reply.protocol == PROTOCOL, "strategy protocol mismatch");
+        self.request
+            .send(frame.clone())
+            .map_err(|e| ExecutionFailure {
+                code: "strategy_exit",
+                message: self.failure_message(&e.to_string()),
+            })?;
+        let reply = self
+            .response
+            .recv_timeout(Duration::from_secs(45))
+            .map_err(|e| ExecutionFailure {
+                code: if e == std::sync::mpsc::RecvTimeoutError::Timeout {
+                    "strategy_timeout"
+                } else {
+                    "strategy_exit"
+                },
+                message: self.failure_message(&e.to_string()),
+            })?
+            .map_err(|e| ExecutionFailure {
+                code: if e.downcast_ref::<std::io::Error>().is_some_and(|e| {
+                    matches!(
+                        e.kind(),
+                        std::io::ErrorKind::UnexpectedEof
+                            | std::io::ErrorKind::BrokenPipe
+                            | std::io::ErrorKind::ConnectionReset
+                    )
+                }) {
+                    "strategy_exit"
+                } else {
+                    "protocol_error"
+                },
+                message: self.failure_message(&e.to_string()),
+            })?;
+        if reply.protocol != PROTOCOL {
+            return Err(ExecutionFailure {
+                code: "protocol_error",
+                message: "strategy protocol mismatch".into(),
+            }
+            .into());
+        }
         Ok(reply.intents)
     }
 }

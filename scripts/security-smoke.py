@@ -87,7 +87,8 @@ body=json.load(response);assert 'validation' not in body and 'paper' not in body
 print('agent-network-and-filesystem-isolated')
 """.replace('PORT',str(port))
     try:
-     result=subprocess.run([str(ROOT/'scripts/run-agent'),'/usr/bin/python3','-c',code],cwd=ROOT,env=dict(os.environ,TC_DATA_DIR=str(data),TC_AGENT_ACCOUNT=args.agent_account,TC_AGENT_TOKEN_NAME=token_name,TC_OWNER_SENTINEL='must-not-inherit'),capture_output=True,text=True,check=True)
+     result=subprocess.run([str(ROOT/'scripts/run-agent'),'/usr/bin/python3','-c',code],cwd=ROOT,env=dict(os.environ,TC_DATA_DIR=str(data),TC_AGENT_ACCOUNT=args.agent_account,TC_AGENT_TOKEN_NAME=token_name,TC_OWNER_SENTINEL='must-not-inherit'),capture_output=True,text=True)
+     assert result.returncode==0,result.stderr
      assert 'agent-network-and-filesystem-isolated' in result.stdout
     finally:subprocess.run(['sudo','-n','rm','-f',agent_token],check=True)
    cli('auth','revoke',issued['id']);assert request('/api/overview',agent)[0]==401

@@ -19,6 +19,8 @@ struct Args {
 #[derive(Subcommand)]
 enum Action {
     Serve {
+        #[arg(long, default_value = ".")]
+        sdk_root: PathBuf,
         #[arg(long, default_value = "127.0.0.1:8080")]
         bind: String,
         #[arg(long, default_value = "dist")]
@@ -139,6 +141,10 @@ enum Action {
     },
     List,
     #[command(hide = true)]
+    CandidateWorker {
+        id: String,
+    },
+    #[command(hide = true)]
     Worker {
         id: String,
     },
@@ -241,11 +247,16 @@ fn main() -> Result<()> {
             }
         },
         Action::SandboxCheck => print(&tc_service::sandbox_check()?),
+        Action::CandidateWorker { id } => {
+            uuid_check(&id)?;
+            tc_service::candidates::worker(&store.root, &id)
+        }
         Action::Worker { id } => {
             uuid_check(&id)?;
             tc_service::worker(&store.root, &id)
         }
         Action::Serve {
+            sdk_root,
             bind,
             assets,
             workers,
@@ -254,6 +265,7 @@ fn main() -> Result<()> {
                 assets.join("index.html").exists(),
                 "web assets missing; run ./scripts/build-web first"
             );
+            tc_service::candidates::prepare_platform(&store, &sdk_root)?;
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
@@ -300,6 +312,7 @@ fn main() -> Result<()> {
                 };
                 let s = store.register(spec, None, None)?;
                 let j = store.submit(Submission {
+                    trace: None,
                     strategy: s.id.clone(),
                     campaign: campaign.id.clone(),
                     period: Period::Development,
@@ -383,6 +396,7 @@ fn main() -> Result<()> {
             key,
             slippage_bps,
         } => print(&store.submit(Submission {
+            trace: None,
             strategy,
             campaign,
             period: if validation {

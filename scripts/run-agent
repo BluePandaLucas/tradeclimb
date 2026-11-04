@@ -20,7 +20,13 @@ assert stat.S_ISSOCK(path.stat().st_mode)
 print(path)
 PY
 )
-exec systemd-run --user --scope --quiet --collect --expand-environment=no \
+# The locked account cannot traverse the owner's checkout. Stage only this
+# public client in a sticky directory, with no agent write permission.
+agent_client=$(mktemp --suffix=.py /tmp/tc-agent-client.XXXXXXXX)
+trap 'rm -f -- "$agent_client"' EXIT
+cat scripts/tc_agent.py > "$agent_client"
+chmod 444 "$agent_client"
+systemd-run --user --scope --quiet --collect --expand-environment=no \
   --property=MemoryMax=4G --property=MemorySwapMax=0 --property=TasksMax=128 --property=CPUQuota=200% --property=RuntimeMaxSec=6h \
   -- sudo -n -u "$agent_account" -- /usr/bin/env -i PATH=/usr/bin:/bin \
   /usr/bin/bwrap --unshare-all --unshare-user --disable-userns --assert-userns-disabled \
@@ -30,6 +36,7 @@ exec systemd-run --user --scope --quiet --collect --expand-environment=no \
   --ro-bind-try /etc/ld.so.cache /etc/ld.so.cache --proc /proc --dev /dev \
   --size 268435456 --tmpfs /tmp --bind "$agent_home" /workspace \
   --ro-bind "$agent_socket" /broker/api.sock \
+  --ro-bind "$agent_client" /tools/tc_agent.py \
   --setenv HOME /workspace --setenv PATH /usr/bin:/bin --setenv LANG C.UTF-8 \
   --setenv TC_API_SOCKET /broker/api.sock --setenv TC_API_TOKEN_FILE "/workspace/$agent_token_name" \
   --chdir /workspace --remount-ro / -- "$@"
