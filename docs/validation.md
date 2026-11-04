@@ -82,3 +82,25 @@ python3 scripts/compare-backtests.py \
 ```
 
 Validation: native workspace tests (78 passed, nine explicitly ignored sandbox/helper tests), release engine tests, engine Clippy across all targets with warnings denied, formatting, and Python syntax checks passed.
+
+## Second fixed-workload improvement (2026-11-04)
+
+This comparison uses the previous optimized commit `fba7300` as its baseline. The demo, its inputs and parameters, the SDK strategy implementation, and the comparison script remain unchanged. The [second set of raw paired measurements](backtest-performance-round2.json) uses the same process timing, CPU utilization, peak-RSS, complete-report hash and seven-pair protocol described above. The original measurement file is retained.
+
+The engine now caches gross equity between orders that leave the portfolio unchanged, invalidates that cache after every fill, and caches execution multipliers. Conservative notional upper bounds skip requests that cannot meet the minimum; checked multiplication falls back to normal execution if the bound overflows. Readiness is evaluated once per pending intent while preserving stable sell/buy/unready order. Candle validation returns the market index without repeating the market search. Reusable candle cloning retains market-string storage, and the equity buffer reserves a conservative initial capacity.
+
+Unobserved backtests temporarily transfer portfolio ownership into the strategy frame, restore it before progress/error handling, and move decisions into the queue. Observed backtests retain owned snapshots and decision visibility. Service jobs without a trace request use the unobserved path; traced jobs retain their existing observer. Small decimal-to-float conversions use narrow integer arithmetic and constant powers, preserving the library's rounding and falling back for other values. Differential tests compare conversion bits over all decimal scales, cached and independently valued orders, and observed/unobserved reports and frame snapshots. Minimum-notional, forced-liquidation and overflow boundaries have dedicated checks.
+
+To reproduce, use the earlier reproduction commands with `git archive fba7300` and separate baseline/candidate build directories. This remains a native in-process workload; external IPC, inference, data loading and tracing costs are not part of this timing comparison.
+
+Seven-pair medians against `fba7300` (candidate `66ffdb3`):
+
+| Measure | Previous optimized baseline | Second optimization | Relative change |
+| --- | ---: | ---: | ---: |
+| Simulation time | 1.3323 s | 0.9085 s | −31.81% |
+| Total process wall time | 1.6562 s | 1.2341 s | −25.49% |
+| Process CPU utilization | 99.269% | 98.861% | −0.41% |
+| Peak process RSS | 92.523 MiB | 91.539 MiB | −1.06% |
+| Process CPU time | 1.65 s | 1.22 s | −26.06% |
+
+Both execution-time thresholds and both resource ceilings passed. The full report SHA-256 also matches the first-round evidence. Native workspace tests and native workspace Clippy with warnings denied passed; the final release engine suite passed all 17 tests, including the overflow fallback added after the workspace run. Release core conversion tests, formatting, and Python syntax checks also passed. Nine sandbox/helper tests remain explicitly ignored by the portable native suite.
