@@ -1,0 +1,144 @@
+{
+  "checked_at": "2026-11-04",
+  "source": "https://api.tardis.dev/v1/exchanges/bitvavo",
+  "available_since": "2026-09-23T00:00:00.000Z",
+  "exported_until": "2026-11-04T00:00:00.000Z",
+  "symbols": [
+    {
+      "id": "ADA-EUR",
+      "availableSince": "2026-09-23T00:00:00.000Z",
+      "availableTo": "2026-11-04T00:00:00.000Z",
+      "dataTypes": [
+        "trades",
+        "incremental_book_L2",
+        "quotes",
+        "book_snapshot_5",
+        "book_snapshot_25",
+        "book_ticker"
+      ]
+    },
+    {
+      "id": "BTC-EUR",
+      "availableSince": "2026-09-23T00:00:00.000Z",
+      "availableTo": "2026-11-04T00:00:00.000Z",
+      "dataTypes": [
+        "trades",
+        "incremental_book_L2",
+        "quotes",
+        "book_snapshot_5",
+        "book_snapshot_25",
+        "book_ticker"
+      ]
+    },
+    {
+      "id": "ETH-EUR",
+      "availableSince": "2026-09-23T00:00:00.000Z",
+      "availableTo": "2026-11-04T00:00:00.000Z",
+      "dataTypes": [
+        "trades",
+        "incremental_book_L2",
+        "quotes",
+        "book_snapshot_5",
+        "book_snapshot_25",
+        "book_ticker"
+      ]
+    },
+    {
+      "id": "SOL-EUR",
+      "availableSince": "2026-09-23T00:00:00.000Z",
+      "availableTo": "2026-11-04T00:00:00.000Z",
+      "dataTypes": [
+        "trades",
+        "incremental_book_L2",
+        "quotes",
+        "book_snapshot_5",
+        "book_snapshot_25",
+        "book_ticker"
+      ]
+    },
+    {
+      "id": "XRP-EUR",
+      "availableSince": "2026-09-23T00:00:00.000Z",
+      "availableTo": "2026-11-04T00:00:00.000Z",
+      "dataTypes": [
+        "trades",
+        "incremental_book_L2",
+        "quotes",
+        "book_snapshot_5",
+        "book_snapshot_25",
+        "book_ticker"
+      ]
+    }
+  ],
+  "kaiko": {
+    "checked_at": "2026-11-04",
+    "exchange_code": "bvav",
+    "instruments": [
+      {
+        "source": "https://reference-data-api.kaiko.io/v1/instruments?exchange_code=bvav&base_asset=btc&quote_asset=eur&class=spot&limit=10&offset=0",
+        "rows": [
+          {
+            "code": "btc-eur",
+            "exchange_code": "bvav",
+            "trade_start_time": "2024-01-01T00:00:02.903Z",
+            "trade_end_time": null,
+            "trade_start_timestamp": 1704067202903,
+            "trade_end_timestamp": null
+          }
+        ]
+      },
+      {
+        "source": "https://reference-data-api.kaiko.io/v1/instruments?exchange_code=bvav&base_asset=eth&quote_asset=eur&class=spot&limit=10&offset=0",
+        "rows": [
+          {
+            "code": "eth-eur",
+            "exchange_code": "bvav",
+            "trade_start_time": "2024-01-01T00:00:03.399Z",
+            "trade_end_time": null,
+            "trade_start_timestamp": 1704067203399,
+            "trade_end_timestamp": null
+          }
+        ]
+      },
+      {
+        "source": "https://reference-data-api.kaiko.io/v1/instruments?exchange_code=bvav&base_asset=sol&quote_asset=eur&class=spot&limit=10&offset=0",
+        "rows": [
+          {
+            "code": "sol-eur",
+            "exchange_code": "bvav",
+            "trade_start_time": "2024-01-01T00:00:00.085Z",
+            "trade_end_time": null,
+            "trade_start_timestamp": 1704067200085,
+            "trade_end_timestamp": null
+          }
+        ]
+      },
+      {
+        "source": "https://reference-data-api.kaiko.io/v1/instruments?exchange_code=bvav&base_asset=xrp&quote_asset=eur&class=spot&limit=10&offset=0",
+        "rows": [
+          {
+            "code": "xrp-eur",
+            "exchange_code": "bvav",
+            "trade_start_time": "2024-01-01T00:00:00.269Z",
+            "trade_end_time": null,
+            "trade_start_timestamp": 1704067200269,
+            "trade_end_timestamp": null
+          }
+        ]
+      },
+      {
+        "source": "https://reference-data-api.kaiko.io/v1/instruments?exchange_code=bvav&base_asset=ada&quote_asset=eur&class=spot&limit=10&offset=0",
+        "rows": [
+          {
+            "code": "ada-eur",
+            "exchange_code": "bvav",
+            "trade_start_time": "2024-01-01T00:00:03.911Z",
+            "trade_end_time": null,
+            "trade_start_timestamp": 1704067203911,
+            "trade_end_timestamp": null
+          }
+        ]
+      }
+    ]
+  }
+}

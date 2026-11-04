@@ -17,7 +17,10 @@ pub(crate) fn groups(store: &Store) -> Result<Vec<Value>> {
 
 fn rank(jobs: Vec<Job>) -> Vec<Value> {
     let mut groups: BTreeMap<String, (Value, BTreeMap<String, Job>)> = BTreeMap::new();
-    for job in jobs.into_iter().filter(|j| j.state == "completed") {
+    for job in jobs
+        .into_iter()
+        .filter(|j| j.state == "completed" && !overlaps_final(j.config.start, j.config.end))
+    {
         let context = json!({"campaign":job.campaign,"period":job.period,"config":job.config,"objective":job.objective});
         let (_, latest) = groups
             .entry(context.to_string())
@@ -74,6 +77,12 @@ mod tests {
             result: Some(json!({"metrics":{"net_cagr":score,"eligible":true}})),
             config: RunConfig::new(0, 24 * 60 * MINUTE),
         }
+    }
+    #[test]
+    fn reserved_results_cannot_enter_any_leaderboard() {
+        let mut reserved = job("reserved", "reserved", Some(99.0));
+        reserved.config = RunConfig::new(FINAL_TEST_START, FINAL_TEST_END);
+        assert!(rank(vec![reserved]).is_empty());
     }
     #[test]
     fn sharpe_ranking_uses_sharpe_and_never_falls_back_to_cagr() -> Result<()> {

@@ -40,8 +40,29 @@ pub struct RegisteredStrategy {
     pub source_hash: Option<String>,
     pub archived: bool,
 }
+/// Owner-reserved final window: metadata may be inspected, financial feedback may not.
+pub const FINAL_TEST_START: i64 = 1_785_542_400_000;
+pub const FINAL_TEST_END: i64 = 1_793_491_200_000;
+pub(crate) fn overlaps_final(start: i64, end: i64) -> bool {
+    start < FINAL_TEST_END && end > FINAL_TEST_START
+}
+fn ensure_research_window(start: i64, end: i64) -> Result<()> {
+    ensure!(
+        !overlaps_final(start, end),
+        "August–October 2026 is reserved for the untouched final test; create a current campaign"
+    );
+    Ok(())
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FinalTestWindow {
+    pub start: i64,
+    pub end: i64,
+    pub range_covered: bool,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Campaign {
+    #[serde(default)]
+    pub final_test: Option<FinalTestWindow>,
     #[serde(default)]
     pub objective: Objective,
     #[serde(default = "initial_target")]
@@ -274,8 +295,22 @@ impl Store {
         } else {
             manifest.end
         };
+        let final_test = overlaps_final(start, end).then_some(FinalTestWindow {
+            start: FINAL_TEST_START,
+            end: FINAL_TEST_END,
+            range_covered: manifest.start <= FINAL_TEST_START && manifest.end >= FINAL_TEST_END,
+        });
+        let end = if final_test.is_some() {
+            end.min(FINAL_TEST_START)
+        } else {
+            end
+        };
+        ensure!(
+            end > start,
+            "dataset has no research interval before the reserved final test"
+        );
         let desired = timestamp("2025-11-01")?;
-        let split = if start <= timestamp("2022-11-01")? && end >= timestamp("2026-11-01")? {
+        let split = if full {
             desired
         } else {
             start + ((end - start) / MINUTE * 3 / 4) * MINUTE
@@ -288,8 +323,10 @@ impl Store {
             end,
             target_cagr,
             objective,
+            &final_test,
         ))?);
         let c = Campaign {
+            final_test,
             objective,
             target_cagr,
             id: id.clone(),
@@ -306,7 +343,14 @@ impl Store {
         let db = self.db()?;
         let mut q = db.prepare("SELECT data FROM jobs ORDER BY rowid DESC LIMIT 500")?;
         q.query_map([], |r| r.get::<_, String>(0))?
-            .map(|r| Ok(serde_json::from_str(&r?)?))
+            .map(|r| {
+                let mut job: Job = serde_json::from_str(&r?)?;
+                if overlaps_final(job.config.start, job.config.end) {
+                    job.result = None;
+                    job.progress = 0.0;
+                }
+                Ok(job)
+            })
             .collect()
     }
     pub fn job(&self, id: &str) -> Result<Job> {
@@ -343,6 +387,7 @@ impl Store {
             config.slippage_bps = bps;
         }
         config.validate()?;
+        ensure_research_window(config.start, config.end)?;
         let fingerprint_inputs =
             serde_json::to_vec(&(&strategy.id, &campaign.dataset, &request.period, &config))?;
         // Preserve V1 cache identities; isolate V2 scoring feedback from old runs.
@@ -456,6 +501,7 @@ impl Store {
     }
     pub fn owner_report(&self, id: &str) -> Result<Report> {
         let j = self.job(id)?;
+        ensure_research_window(j.config.start, j.config.end)?;
         if j.period == Period::Validation {
             self.db()?
                 .execute("UPDATE ledger SET revealed=1 WHERE id=1", [])?;
@@ -571,18 +617,23 @@ fn flate_read(path: &Path, bytes: &mut Vec<u8>) -> Result<()> {
     GzDecoder::new(fs::File::open(path)?).read_to_end(bytes)?;
     Ok(())
 }
+fn research_observation(time: i64, config: &RunConfig) -> bool {
+    time >= config.start - 1440 * MINUTE
+        && time < config.end
+        && !overlaps_final(time, time + MINUTE)
+}
 pub fn worker(root: &Path, id: &str) -> Result<()> {
     let directory = root.join("jobs").join(id);
     let mut request: WorkerRequest = read_json(&directory.join("request.json"))?;
+    ensure_research_window(request.config.start, request.config.end)?;
     let store = Store::open(root)?;
     let job = store.job(id)?;
     let registered: RegisteredStrategy = store.get("strategy", &job.strategy)?;
     request.spec = store.resolve_strategy(&registered)?;
     let (_, candles) = tc_data::load(root, &request.dataset)?;
-    let warmup_start = request.config.start - 1440 * MINUTE;
     let relevant: Vec<_> = candles
         .into_iter()
-        .filter(|c| c.time >= warmup_start && c.time < request.config.end)
+        .filter(|c| research_observation(c.time, &request.config))
         .collect();
     let _broker = matches!(request.spec.kind, StrategyKind::Executable { .. })
         .then(|| broker::ModelBroker::start(store.clone(), id))
@@ -911,6 +962,7 @@ mod tests {
             )
             .unwrap();
         let c = Campaign {
+            final_test: None,
             objective: Objective::NetCagr,
             target_cagr: 0.15,
             id: "campaign".into(),
@@ -931,6 +983,91 @@ mod tests {
             idempotency_key: key.into(),
             slippage_bps: None,
         }
+    }
+    #[test]
+    fn post_holdout_warmup_never_delivers_reserved_candles() {
+        let config = RunConfig::new(FINAL_TEST_END, FINAL_TEST_END + 2 * MINUTE);
+        let times = [
+            FINAL_TEST_END - 2 * MINUTE,
+            FINAL_TEST_END - MINUTE,
+            FINAL_TEST_END,
+            FINAL_TEST_END + MINUTE,
+            FINAL_TEST_END + 2 * MINUTE,
+        ];
+        let delivered: Vec<_> = times
+            .into_iter()
+            .filter(|t| research_observation(*t, &config))
+            .collect();
+        assert_eq!(delivered, [FINAL_TEST_END, FINAL_TEST_END + MINUTE]);
+    }
+    #[test]
+    fn full_campaign_reserves_final_quarter_and_preserves_development() {
+        let (_dir, store, _, _) = setup();
+        let start = timestamp("2022-10-31").unwrap();
+        let manifest =
+            tc_data::snapshot(&store.root, vec![], start, FINAL_TEST_END, true, true).unwrap();
+        for objective in [Objective::NetCagr, Objective::SharpeDailyV1] {
+            let campaign = store
+                .campaign_with_objective(&manifest.id, 0.15, objective)
+                .unwrap();
+            assert_eq!(campaign.development_start, timestamp("2022-11-01").unwrap());
+            assert_eq!(campaign.development_end, timestamp("2025-11-01").unwrap());
+            assert_eq!(campaign.validation_start, campaign.development_end);
+            assert_eq!(campaign.validation_end, FINAL_TEST_START);
+            let holdout = campaign.final_test.unwrap();
+            assert_eq!(holdout.start, FINAL_TEST_START);
+            assert_eq!(holdout.end, FINAL_TEST_END);
+            assert!(holdout.range_covered);
+        }
+    }
+    #[test]
+    fn legacy_or_forged_campaign_cannot_evaluate_reserved_dates_or_spend_budget() {
+        let (_dir, store, strategy, id) = setup();
+        let mut campaign: Campaign = store.get("campaign", &id).unwrap();
+        campaign.development_start = FINAL_TEST_START - MINUTE;
+        campaign.development_end = FINAL_TEST_START + MINUTE;
+        campaign.validation_start = FINAL_TEST_START;
+        campaign.validation_end = FINAL_TEST_END;
+        store.put("campaign", &id, &campaign).unwrap();
+        let request = request(&strategy, &id, "holdout");
+        assert!(store.submit(request.clone()).is_err());
+        assert!(
+            store
+                .submit(Submission {
+                    period: Period::Development,
+                    ..request
+                })
+                .is_err()
+        );
+        assert_eq!(store.ledger().unwrap()["used"], 0);
+        assert!(!overlaps_final(FINAL_TEST_START - MINUTE, FINAL_TEST_START));
+        assert!(!overlaps_final(FINAL_TEST_END, FINAL_TEST_END + MINUTE));
+        // Post-holdout warmup frames must not carry any of the reserved minutes.
+        assert!(overlaps_final(FINAL_TEST_END - MINUTE, FINAL_TEST_END));
+        assert!(!overlaps_final(FINAL_TEST_END, FINAL_TEST_END + MINUTE));
+    }
+    #[test]
+    fn old_reserved_jobs_are_redacted_and_cannot_be_inspected_or_restarted() {
+        let (_dir, store, strategy, campaign) = setup();
+        let mut job = store.submit(request(&strategy, &campaign, "old")).unwrap();
+        job.config = RunConfig::new(FINAL_TEST_START, FINAL_TEST_END);
+        job.state = "completed".into();
+        job.progress = 1.0;
+        job.result = Some(json!({"sharpe":99.0,"equity":"SECRET"}));
+        store.update_job(&job).unwrap();
+        assert!(store.jobs().unwrap()[0].result.is_none());
+        assert_eq!(store.jobs().unwrap()[0].progress, 0.0);
+        assert!(store.owner_report(&job.id).is_err());
+        let path = store.root.join("jobs").join(&job.id).join("request.json");
+        let mut request: WorkerRequest = read_json(&path).unwrap();
+        request.config = job.config;
+        save_json(&path, &request).unwrap();
+        assert!(
+            worker(&store.root, &job.id)
+                .unwrap_err()
+                .to_string()
+                .contains("untouched final test")
+        );
     }
     #[test]
     fn legacy_objectives_are_not_reinterpreted() {

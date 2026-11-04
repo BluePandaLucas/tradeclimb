@@ -1,0 +1,72 @@
+{
+  "approved_at": "2026-11-04",
+  "dataset": "7ed1d4e27e513ff4b6f226e4ec34f4f5ed082f7fb49c8a1cb17a5491f5967143",
+  "accepted": true,
+  "acceptance": "owner explicitly accepted documented gaps",
+  "strict_coverage_passed": false,
+  "rows": 9489303,
+  "coverage": [
+    {
+      "market": "BTC-EUR",
+      "rows": 2012669,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 92611,
+      "largest_gap_minutes": 360
+    },
+    {
+      "market": "ETH-EUR",
+      "rows": 1899708,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 205572,
+      "largest_gap_minutes": 361
+    },
+    {
+      "market": "SOL-EUR",
+      "rows": 1875191,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 230089,
+      "largest_gap_minutes": 362
+    },
+    {
+      "market": "XRP-EUR",
+      "rows": 1939756,
+      "first": 1667174400000,
+      "last": 1793491080000,
+      "missing_minutes": 165524,
+      "largest_gap_minutes": 360
+    },
+    {
+      "market": "ADA-EUR",
+      "rows": 1761979,
+      "first": 1667174400000,
+      "last": 1793491140000,
+      "missing_minutes": 343301,
+      "largest_gap_minutes": 374
+    }
+  ],
+  "notes": [
+    "No-candle intervals are unknown/no-trade; they are never executable synthetic candles.",
+    "Owner explicitly accepted large unknown data gaps"
+  ],
+  "campaign": {
+    "final_test": {
+      "start": 1785542400000,
+      "end": 1793491200000,
+      "range_covered": true
+    },
+    "objective": "sharpe_daily_v1",
+    "target_cagr": 0.15,
+    "id": "8c8df2354e237efbefc76c16e1eeb04bce33a261567dd845fb3ee4b9dcbaa5ea",
+    "dataset": "7ed1d4e27e513ff4b6f226e4ec34f4f5ed082f7fb49c8a1cb17a5491f5967143",
+    "development_start": 1667260800000,
+    "development_end": 1761955200000,
+    "validation_start": 1761955200000,
+    "validation_end": 1785542400000
+  },
+  "validation_queries_used": 0,
+  "final_test_evaluated": false,
+  "research_jobs_submitted": 0
+}

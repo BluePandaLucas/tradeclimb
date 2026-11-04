@@ -271,6 +271,7 @@ async fn job(
     Query(window): Query<ChartWindow>,
 ) -> Api<Job> {
     let mut job = app.store.job(&id)?;
+    ensure_research_window(job.config.start, job.config.end)?;
     if job.period == Period::Development {
         let directory = app.store.root.join("jobs").join(&id);
         let name = if job.state == "completed" {
@@ -333,6 +334,7 @@ async fn trades(
     Query(page): Query<Page>,
 ) -> Api<Value> {
     let job = app.store.job(&id)?;
+    ensure_research_window(job.config.start, job.config.end)?;
     if job.period == Period::Validation {
         return Err(anyhow::anyhow!(
             "validation exposes only the campaign score; use explicit local owner inspection to reveal details"
@@ -615,6 +617,7 @@ mod tests {
                 )
                 .unwrap();
             let campaign = Campaign {
+                final_test: None,
                 objective,
                 target_cagr: 0.15,
                 id: "campaign".into(),
@@ -669,6 +672,62 @@ mod tests {
                 routes(store).oneshot(req).await.unwrap().status(),
                 StatusCode::BAD_REQUEST
             );
+        }
+    }
+    #[tokio::test]
+    async fn reserved_dates_are_hidden_from_http_detail_overview_and_leaderboards() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let job = Job {
+            objective: Objective::SharpeDailyV1,
+            id: "reserved".into(),
+            strategy: "strategy".into(),
+            campaign: "legacy".into(),
+            period: Period::Development,
+            state: "completed".into(),
+            created_at: 1,
+            updated_at: 1,
+            progress: 1.0,
+            error: None,
+            result: Some(json!({"metrics":{"sharpe":99.0},"equity":"SECRET"})),
+            config: RunConfig::new(FINAL_TEST_START, FINAL_TEST_END),
+        };
+        store
+            .db()
+            .unwrap()
+            .execute(
+                "INSERT INTO jobs(id,key,fingerprint,data) VALUES(?1,?1,?1,?2)",
+                params![job.id, serde_json::to_string(&job).unwrap()],
+            )
+            .unwrap();
+        save_json(
+            &store.root.join("jobs/reserved/result.json"),
+            &json!({"equity":"SECRET"}),
+        )
+        .unwrap();
+        for route in [
+            "/api/jobs/reserved?days=7",
+            "/api/jobs/reserved/trades",
+            "/api/overview",
+        ] {
+            let req = axum::http::Request::builder()
+                .uri(route)
+                .header("host", "localhost")
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let response = routes(store.clone()).oneshot(req).await.unwrap();
+            assert_eq!(
+                response.status(),
+                if route == "/api/overview" {
+                    StatusCode::OK
+                } else {
+                    StatusCode::BAD_REQUEST
+                }
+            );
+            let body = axum::body::to_bytes(response.into_body(), 1_000_000)
+                .await
+                .unwrap();
+            assert!(!String::from_utf8(body.to_vec()).unwrap().contains("SECRET"));
         }
     }
     #[tokio::test]
