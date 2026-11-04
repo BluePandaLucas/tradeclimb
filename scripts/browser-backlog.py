@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix='tc-backlog-') as folder:
             trigger=page.locator('.controls .picker-trigger')
             trigger.click()
             dialog=page.locator('dialog[open]')
+            expect(dialog.get_by_role('searchbox')).not_to_be_focused()
             while not dialog.get_by_role('button',name='Previous strategies').is_disabled():
                 dialog.get_by_role('button',name='Previous strategies').click()
             expect(dialog.locator('.family-option')).to_have_count(30)
@@ -62,7 +63,9 @@ with tempfile.TemporaryDirectory(prefix='tc-backlog-') as folder:
             trigger.focus()
             page.keyboard.press('Enter')
             assert dialog.is_visible()
-            assert page.locator(':focus').get_attribute('type')=='search'
+            expect(dialog.get_by_role('searchbox')).not_to_be_focused()
+            page.keyboard.press('Tab')
+            expect(dialog.get_by_role('searchbox')).to_be_focused()
             # Growing the library must not close the picker or reset its search.
             search.fill('Adaptive trend 001')
             db=sqlite3.connect(state/'tradeclimb.db')

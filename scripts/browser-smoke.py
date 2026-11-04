@@ -38,6 +38,8 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    toggle.wait_for()
    assert page.locator('html').get_attribute('data-theme')=='system'
    assert toggle.get_attribute('aria-pressed')=='true'
+   assert toggle.locator('svg circle').count()==1
+   assert toggle.inner_text()==''
    assert page.evaluate('getComputedStyle(document.body).backgroundColor') in ('rgba(0, 0, 0, 0)','rgb(17, 26, 30)')
    assert page.evaluate('getComputedStyle(document.documentElement).backgroundColor')=='rgb(17, 26, 30)'
    assert '0.22s' in page.locator('html').evaluate('el => getComputedStyle(el).transitionDuration')
@@ -46,6 +48,9 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.emulate_media(reduced_motion='no-preference')
    toggle.click()
    assert page.locator('html').get_attribute('data-theme')=='light'
+   assert toggle.locator('svg').count()==1
+   assert toggle.locator('svg circle').count()==0
+   assert toggle.inner_text()==''
    page.reload(wait_until='domcontentloaded')
    toggle.wait_for()
    assert page.locator('html').get_attribute('data-theme')=='light'
