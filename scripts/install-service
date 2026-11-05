@@ -78,6 +78,9 @@ pending.replace(current)
 subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
 subprocess.run(['systemctl', '--user', 'enable', 'tradeclimb.service', 'tradeclimb-lan.service',
                 'tradeclimb-backup.timer', 'tradeclimb-health.timer'], check=True)
+# A reviewed replacement is an explicit recovery action; earlier failed boots
+# must not prevent the new release from getting its first start attempt.
+subprocess.run(['systemctl', '--user', 'reset-failed', 'tradeclimb.service', 'tradeclimb-lan.service'], check=True)
 subprocess.run(['systemctl', '--user', 'restart', 'tradeclimb.service', 'tradeclimb-lan.service',
                 'tradeclimb-backup.timer', 'tradeclimb-health.timer'], check=True)
 print(f'Installed {release}\nLAN: https://{ip}:8443\nData: {data}\nCertificate: {config / "lan.crt"}')
