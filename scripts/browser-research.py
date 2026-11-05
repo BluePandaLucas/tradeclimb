@@ -44,16 +44,17 @@ with tempfile.TemporaryDirectory(prefix='tc-research-ui-') as folder:
     search=page.get_by_role('searchbox',name='Search runs');search.fill(job['id'])
     row=page.locator(f'tr[data-run-id="{job["id"]}"]');row.click()
     chart=page.locator('.run-detail');chart.get_by_role('img',name='Net portfolio equity').wait_for()
+    expect(chart.locator('.run-provenance .badge')).to_have_text('Synthetic fixture')
     expect(chart.locator('.benchmark-line')).to_have_count(2)
     for line in chart.locator('.benchmark-line').all():
-     assert line.get_attribute('stroke-dasharray') is None
-     assert line.get_attribute('stroke-opacity')=='0.5'
+     assert line.get_attribute('stroke-dasharray') in ('7 4','2 4')
+     assert line.get_attribute('stroke-opacity')=='1'
     expect(chart.locator('.trade-marker')).to_have_count(0);assert '501' in chart.locator('.marker-note').inner_text()
     expect(chart.locator('.benchmark-comparison tbody tr')).to_have_count(2)
     page.screenshot(path='/tmp/tradeclimb-v2-research.png',full_page=True)
     assert request('/api/jobs/'+job['id']+'/trades')[1]['total']==original['metrics']['trades']
     chart.get_by_label('BTC reference',exact=True).uncheck();expect(chart.locator('.benchmark-line')).to_have_count(1)
-    assert chart.locator('.benchmark-line').get_attribute('stroke')=='#c1b49c'
+    assert chart.locator('.benchmark-line').get_attribute('stroke')=='var(--benchmark-basket)'
     expect(chart.locator('.benchmark-comparison tbody tr')).to_have_count(2)
     status,validation=request('/api/jobs',body={'strategy':version,'campaign':job['campaign'],'period':'validation','idempotency_key':'owner-inspection'})
     assert status==200;vid=validation['id']

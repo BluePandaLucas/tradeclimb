@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert page.locator('.shell').evaluate('el => el.classList.contains("sidebar-collapsed")')
    page.get_by_role('button',name='Expand sidebar',exact=True).focus()
    page.keyboard.press('Enter')
-   page.wait_for_function('document.querySelector(".sidebar").getBoundingClientRect().width === 232')
+   page.wait_for_function('document.querySelector(".sidebar").getBoundingClientRect().width === 216')
    toggle=page.get_by_role('button',name='Toggle dark mode',exact=True)
    system=page.get_by_role('button',name='Use system theme',exact=True)
    toggle.wait_for()
@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert page.locator('html').get_attribute('data-theme')=='light'
    system.click()
    page.emulate_media(color_scheme='light')
-   page.wait_for_function('getComputedStyle(document.documentElement).backgroundColor === "rgb(246, 248, 250)"')
+   page.wait_for_function('getComputedStyle(document.documentElement).backgroundColor === "rgb(243, 246, 246)"')
    page.emulate_media(color_scheme='dark')
    page.wait_for_function('getComputedStyle(document.documentElement).backgroundColor === "rgb(17, 26, 30)"')
    page.get_by_role('button',name='Trend explorer',exact=True).first.wait_for()
@@ -135,7 +135,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
     stop.first.click()
    page.locator('.research-tabs button').first.click()
    page.get_by_label('Show individual tuning trials').uncheck()
-   assert evaluation_rows.count()==baseline
+   page.wait_for_function('(n) => document.querySelectorAll(".evaluations tbody tr").length === n',arg=baseline)
    page.get_by_role('button',name='Overview',exact=True).click()
    cash=page.locator('.evaluation-row').filter(has=page.get_by_role('button',name='Cash reference',exact=True)).first
    cash_id=cash.get_attribute('data-run-id')
@@ -168,7 +168,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.wait_for_function('Array.from(document.querySelectorAll(".leaderboard tbody td")).some(td => td.textContent === "Sharpe only")')
    assert comparison.input_value()==validation_option
    rows.first.get_by_role('button').click()
-   page.get_by_role('heading',name='Run details',exact=True).wait_for()
+   page.locator('.run-detail h2').wait_for()
    assert page.get_by_role('button',name='View validation details',exact=True).count()==1
    with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:validation_data=json.load(response)
    assert not validation_data['validation']['revealed'],'leaderboard revealed validation'
@@ -177,7 +177,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    comparison.select_option(choice)
    rows.first.get_by_role('button').click()
    page.get_by_role('heading',name='Backtests',exact=True).wait_for()
-   page.get_by_role('heading',name='Run details',exact=True).wait_for()
+   page.locator('.run-detail h2').wait_for()
    page.get_by_role('button',name='History',exact=True).click()
    assert page.locator('.stats,.controls,.run-detail').count()==0
    page.get_by_role('heading',name='Strategy history book').wait_for()
@@ -212,14 +212,22 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.locator(f'button[data-strategy-id="{strategy_id}"]').click()
    page.wait_for_function('document.querySelectorAll(".paper-session").length === 2')
    page.set_viewport_size({'width':390,'height':844})
-   page.get_by_role('button',name='Collapse sidebar',exact=True).click()
-   page.wait_for_function('document.querySelector(".sidebar").getBoundingClientRect().width === 64')
-   assert not page.get_by_role('button',name='Leaderboard',exact=True).locator('.nav-text').is_visible()
-   page.get_by_role('button',name='Expand sidebar',exact=True).click()
+   page.wait_for_function('document.querySelector(".sidebar").getBoundingClientRect().width === innerWidth')
    assert page.get_by_role('button',name='Leaderboard',exact=True).locator('.nav-text').is_visible()
-   page.get_by_role('button',name='Collapse sidebar',exact=True).click()
+   assert not page.get_by_role('button',name='Collapse sidebar',exact=True).is_visible()
    page.screenshot(path='/tmp/tradeclimb-mobile.png',full_page=True)
    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'),'page overflows mobile viewport'
+   page.get_by_role('button',name='Overview',exact=True).click()
+   filters=page.get_by_role('button',name='Filters ⌄',exact=True)
+   assert filters.get_attribute('aria-expanded')=='false'
+   assert not page.get_by_role('searchbox',name='Search runs').is_visible()
+   filters.click()
+   page.get_by_role('searchbox',name='Search runs').wait_for()
+   assert page.get_by_role('button',name='Hide filters',exact=True).get_attribute('aria-expanded')=='true'
+   page.get_by_role('button',name='Hide filters',exact=True).click()
+   assert page.locator('.evaluation-row').first.locator('.mobile-detail-link').is_visible()
+   page.set_viewport_size({'width':320,'height':740})
+   assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),'page overflows narrow mobile viewport'
    empty=browser.new_page()
    empty.context.add_cookies(page.context.cookies())
    empty.on('pageerror',lambda e:errors.append(str(e)))

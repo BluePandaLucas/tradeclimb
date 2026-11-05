@@ -34,12 +34,44 @@ fn dataset_name(data: &Value, id: &str) -> String {
     };
     format!("{name} {}", short(id))
 }
+fn synthetic_job(data: &Value, job: &Value) -> bool {
+    items(data, "campaigns")
+        .iter()
+        .find(|c| c["id"] == job["campaign"])
+        .is_some_and(|c| {
+            items(data, "datasets")
+                .iter()
+                .any(|d| d["id"] == c["dataset"] && d["synthetic"] == true)
+        })
+}
 fn percent(v: &Value) -> String {
     v.as_f64()
         .map_or("—".into(), |n| format!("{:+.2}%", n * 100.0))
 }
+fn drawdown(v: &Value) -> String {
+    v.as_f64()
+        .map(|n| format!("{:.2}%", n.abs() * 100.0))
+        .unwrap_or_else(|| "—".into())
+}
 fn money(v: f64) -> String {
-    format!("€{v:.2}")
+    let raw = format!("{:.2}", v.abs());
+    let (whole, cents) = raw.split_once('.').unwrap_or((&raw, "00"));
+    let grouped = whole
+        .chars()
+        .rev()
+        .enumerate()
+        .flat_map(|(i, c)| {
+            if i > 0 && i % 3 == 0 {
+                vec![',', c]
+            } else {
+                vec![c]
+            }
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<String>();
+    format!("{}€{grouped}.{cents}", if v < 0.0 { "−" } else { "" })
 }
 fn short(v: &str) -> String {
     v.chars().take(8).collect()
@@ -246,26 +278,26 @@ fn App() -> impl IntoView {
         on_cleanup(move || source.close());
     }
     view! {
-    <div class="shell" class:sidebar-collapsed=move||sidebar_collapsed.get()>
+    <a class="skip-link" href="#main-content">"Skip to content"</a><div class="shell" class:sidebar-collapsed=move||sidebar_collapsed.get()>
     <aside class="sidebar"><a class="brand" href="/"><span class="brand-mark">"↗"</span><span>"TradeClimb"<small>"RESEARCH WORKSPACE"</small></span></a>
     <button class="sidebar-toggle" aria-controls="workspace-navigation" aria-expanded=move||(!sidebar_collapsed.get()).to_string() aria-label=move||if sidebar_collapsed.get(){"Expand sidebar"}else{"Collapse sidebar"} title=move||if sidebar_collapsed.get(){"Expand sidebar"}else{"Collapse sidebar"} on:click=move|_|{
         let next = !sidebar_collapsed.get();sidebar_collapsed.set(next);
         if let Some(storage) = web_sys::window().and_then(|w|w.local_storage().ok().flatten()) {let _ = storage.set_item("tc-sidebar-collapsed", &next.to_string());}
     }><span aria-hidden="true">{move||if sidebar_collapsed.get(){"»"}else{"«"}}</span></button>
-    <div class="nav-label">"WORKSPACE"</div><nav id="workspace-navigation">{["Overview","Backtests","Leaderboard","Paper trading","History"].into_iter().enumerate().map(move|(i,name)|view!{<button aria-label=name title=name class:active=move||tab.get()==name on:click=move|_|{tab.set(name.into());selected.set(String::new());}><span class="nav-icon" aria-hidden="true">{["◈","⌁","♜","◉","▤"][i]}</span><span class="nav-text">{name}</span></button>}).collect_view()}</nav>
+    <div class="nav-label">"WORKSPACE"</div><nav id="workspace-navigation">{["Overview","Backtests","Leaderboard","Paper trading","History"].into_iter().enumerate().map(move|(i,name)|view!{<button aria-label=name title=name aria-current=move||if tab.get()==name{Some("page")}else{None} class:active=move||tab.get()==name on:click=move|_|{tab.set(name.into());selected.set(String::new());}><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d={["M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z","M4 3v18h17 M7 15l4-5 4 3 5-8","M4 20v-6h4v6 M10 20V9h4v11 M16 20V4h4v16","M12 3a9 9 0 1 0 9 9h-9z M15 3v6h6a9 9 0 0 0-6-6","M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5"][i]}/></svg></span><span class="nav-text">{name}</span></button>}).collect_view()}</nav>
     <div class="sidebar-bottom"><span class="mode-dot"></span>"Paper only"<p>"Local workspace · isolated strategies"</p><div class="version">"TC / v0.1"</div></div></aside>
-    <main><header class="topbar"><div class="breadcrumb">"Workspace"<span>"/"</span>{move||tab.get()}</div><div class="connection"><span class:offline=move||!online.get() class="live-dot"></span><span class="connection-text">{move||if online.get(){"Connected"}else{"Reconnecting"}}</span><ThemeToggle/><button class="text-button" on:click=move|_|{spawn_local(async move {let _=Request::post("/api/logout").send().await;sign_in();});}>"Sign out"</button><span class="pill">"NO REAL ORDERS"</span></div></header>
-    <div class="content"><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>"Explore ideas. Measure honestly. Keep climbing."</p></div><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());campaign.map(|c|if is_sharpe(c) {"OBJECTIVE · SHARPE".into()} else {format!("GOAL {} NET CAGR",percent(&c["target_cagr"]))}).unwrap_or("OBJECTIVE · SHARPE".into())}}</span>{move||date(&snapshot.get()["time"])}</div></div>
+    <main id="main-content"><header class="topbar"><div class="breadcrumb">"Workspace"<span>"/"</span>{move||tab.get()}</div><div class="connection"><span class="live-dot" class:offline=move||!online.get()></span><span class="connection-text">{move||if online.get(){"Connected"}else{"Reconnecting"}}</span><ThemeToggle/><button class="text-button" on:click=move|_|{spawn_local(async move {let _=Request::post("/api/logout").send().await;sign_in();});}>"Sign out"</button><span class="pill">"NO REAL ORDERS"</span></div></header>
+    <div class="content" data-page=move||tab.get()><div class="page-heading"><div><div class="eyebrow">"TRADECLIMB / STRATEGY RESEARCH"</div><h1>{move||tab.get()}</h1><p>{move||match tab.get().as_str(){"Backtests"=>"Configure an evaluation. Compare results after costs.","Leaderboard"=>"Compare strategies within the same evaluation campaign.","Paper trading"=>"Observe strategies in independent virtual portfolios.","History"=>"Trace every strategy version and research decision.",_=>"Your strategies, evaluations and research progress."}}</p></div><div class="heading-actions"><Show when=move||tab.get()=="Overview"><button class="primary" on:click=move|_|tab.set("Backtests".into())>"＋ New backtest"</button></Show><div class="date-label"><span class="goal-label">{move||{let campaigns=items(&snapshot.get(),"campaigns");let chosen=selected_campaign.get();let campaign=campaigns.iter().find(|c|text(c,"id")==chosen).or(campaigns.first());campaign.map(|c|if is_sharpe(c) {"OBJECTIVE · SHARPE".into()} else {format!("GOAL {} NET CAGR",percent(&c["target_cagr"]))}).unwrap_or("OBJECTIVE · SHARPE".into())}}</span>{move||format!("Updated {} UTC",date(&snapshot.get()["time"]))}</div></div></div>
     <Show when=move||tab.get()=="Backtests"><div class="controls"><div class="strategy-control"><span class="field-label">"Strategy / version"</span><StrategyPicker snapshot=snapshot selected=selected_strategy/></div>
-    <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {} → {} · {}",dataset_name(&snapshot.get(),&text(&c,"dataset")),date(&c["development_start"]),date(&c["validation_end"]),score_label(&c))}</option>}}/></select></label>
+    <label class="campaign-select">"Evaluation campaign"<select prop:value=move||selected_campaign.get() on:change=move|ev|selected_campaign.set(event_target_value(&ev))><For each={move || items(&snapshot.get(),"campaigns")} key={|c:&Value|text(c,"id")} children={move |c| view!{<option value=text(&c,"id")>{format!("{} · {}",dataset_name(&snapshot.get(),&text(&c,"dataset")),score_label(&c))}</option>}}/></select><small class="campaign-period">{move||items(&snapshot.get(),"campaigns").iter().find(|c|text(c,"id")==selected_campaign.get()).map(|c|format!("{} → {} UTC",date(&c["development_start"]),date(&c["validation_end"]))).unwrap_or_default()}</small></label>
     <label>"Period"<select prop:value=move||period.get() on:change=move|ev|period.set(event_target_value(&ev))><option value="development">"Development"</option><option value="validation">"Validation · owner details available"</option></select></label>
     <button class="primary" on:click=move|_|{let s=snapshot.get();let strategy=if selected_strategy.get().is_empty(){text(&items(&s,"strategies").into_iter().find(|s|s["archived"]!=true).unwrap_or(Value::Null),"id")}else{selected_strategy.get()};let campaign=if selected_campaign.get().is_empty(){text(&items(&s,"campaigns").into_iter().next().unwrap_or(Value::Null),"id")}else{selected_campaign.get()};action("/api/jobs".into(),json!({"strategy":strategy,"campaign":campaign,"period":period.get(),"idempotency_key":format!("web-{}",js_sys::Date::now())}),status);}>"＋ Run backtest"</button>
     </div></Show>
-    <div class="notice">"Final test reserved: 1 August–31 October 2026. Development and validation exclude this period."</div>
-    <div class="statusline" role="status">{move||status.get()}</div>
+    <div class="notice research-context"><strong>"Reserved final test"</strong>" · 1 Aug–31 Oct 2026."<span class="desktop-context">" Excluded from development and validation."</span></div>
+    <div class="statusline" role="status">{move||{let s=status.get();if s=="Ready"{String::new()}else{s}}}</div>
     {move||{let data=snapshot.get();let jobs=items(&data,"jobs");let strategies=items(&data,"strategies");let active=jobs.iter().filter(|j|["queued","preparing","running"].contains(&text(j,"state").as_str())).count();let active=data["job_counts"]["active"].as_u64().unwrap_or(active as u64);let completed=data["job_counts"]["completed"].as_u64().unwrap_or_else(||jobs.iter().filter(|j|j["state"]=="completed").count() as u64);view!{
-    {if tab.get()=="Overview" {view!{<div class="stats"><Stat label="STRATEGY VERSIONS" value=strategies.len().to_string() note="Every evaluated idea is retained"/><Stat label="ACTIVE EVALUATIONS" value=active.to_string() note="Bounded local workers"/><Stat label="COMPLETED BACKTESTS" value=completed.to_string() note="Costs included in all results"/><Stat label="VALIDATION BUDGET" value=format!("{} / {}",data["validation"]["used"],data["validation"]["maximum"]) note=if data["validation"]["revealed"]==true{"Owner has revealed validation"}else{"Campaign-wide scalar feedback"}/></div>}.into_any()}else{().into_any()}}
-    {if items(&data,"datasets").iter().any(|d|d["synthetic"]==true){view!{<div class="notice">"◇ Synthetic fixtures are present. Their curves verify the platform and are not market performance evidence."</div>}.into_any()}else{().into_any()}}
+    {if tab.get()=="Overview" {view!{<div class="stats"><Stat label="STRATEGY VERSIONS" value=strategies.len().to_string() note="Every evaluated idea is retained"/><Stat label="ACTIVE EVALUATIONS" value=active.to_string() note="Bounded local workers"/><Stat label="COMPLETED EVALUATIONS" value=completed.to_string() note="Includes individual tuning trials"/><Stat label="VALIDATION BUDGET" value=format!("{} / {}",data["validation"]["used"],data["validation"]["maximum"]) note=if data["validation"]["revealed"]==true{"Owner has revealed validation"}else{"Campaign-wide scalar feedback"}/></div>}.into_any()}else{().into_any()}}
+    {if items(&data,"datasets").iter().any(|d|d["synthetic"]==true){view!{<div class="notice synthetic-context"><strong>"Synthetic data present"</strong><span class="desktop-context">" · Fixture results test the platform; they are not market performance evidence."</span><span class="mobile-context">" · Not market performance evidence."</span></div>}.into_any()}else{().into_any()}}
     {if items(&data,"datasets").iter().any(|d|d["accepted"]==false){view!{<div class="notice">"A downloaded historical snapshot needs coverage review. It is excluded from research campaigns until explicitly accepted."</div>}.into_any()}else{().into_any()}}
     {if tab.get()=="Leaderboard" {view!{<Leaderboard data=data.clone() selected=leaderboard_group tab=tab run=selected/>}.into_any()}
     else {().into_any()}}
@@ -315,6 +347,16 @@ fn Chart(
     let pad = ((high - low) * 0.12).max(10.0);
     low = (low - pad).max(0.0);
     high += pad;
+    let rough_step = (high - low) / 4.0;
+    let magnitude = 10_f64.powf(rough_step.log10().floor());
+    let step = [1.0, 2.0, 2.5, 5.0, 10.0]
+        .into_iter()
+        .map(|n| n * magnitude)
+        .find(|n| *n >= rough_step)
+        .unwrap_or(magnitude * 10.0);
+    low = (low / step).floor() * step;
+    high = (high / step).ceil() * step;
+    let tick_count = ((high - low) / step).round() as usize;
     let x = move |time: f64| 65.0 + (time - start) / (end - start).max(1.0) * 1000.0;
     let y = move |value: f64| 260.0 - (value - low) / (high - low) * 225.0;
     let line = xy
@@ -323,15 +365,15 @@ fn Chart(
         .collect::<Vec<_>>()
         .join(" ");
     let area = format!("65,275 {line} 1065,275");
-    let ticks=(0..5).map(|i|{let value=low+(high-low)*i as f64/4.0;view!{<g><line x1="65" x2="1065" y1=y(value) y2=y(value) stroke="var(--chart-grid)" stroke-dasharray="3 5"/><text x="0" y=y(value)+4.0 fill="var(--muted)" font-size="11">{money(value)}</text></g>}}).collect_view();
+    let ticks=(0..=tick_count).map(|i|{let value=low+step*i as f64;view!{<g><line x1="65" x2="1065" y1=y(value) y2=y(value) stroke="var(--chart-grid)" stroke-dasharray="3 5"/><text x="0" y=y(value)+4.0 fill="var(--muted)" font-size="13">{money(value).trim_end_matches(".00").to_string()}</text></g>}}).collect_view();
     let color = |b: &Value| {
         if text(b, "name").starts_with("BTC") {
-            "#9aabc2"
+            "var(--benchmark-btc)"
         } else {
-            "#c1b49c"
+            "var(--benchmark-basket)"
         }
     };
-    let benchmark_lines=benchmarks.iter().map(|b|{let points=items(b,"equity").iter().filter_map(|p|Some(format!("{:.2},{:.2}",x(p["time"].as_f64()?),y(p["equity"].as_f64()?)))).collect::<Vec<_>>().join(" ");view!{<polyline class="benchmark-line" points=points fill="none" stroke=color(b) stroke-opacity="0.5" stroke-width="1.6" vector-effect="non-scaling-stroke"/>}}).collect_view();
+    let benchmark_lines=benchmarks.iter().map(|b|{let points=items(b,"equity").iter().filter_map(|p|Some(format!("{:.2},{:.2}",x(p["time"].as_f64()?),y(p["equity"].as_f64()?)))).collect::<Vec<_>>().join(" ");view!{<polyline class="benchmark-line" points=points fill="none" stroke=color(b) stroke-opacity="1" stroke-dasharray=if text(b,"name").starts_with("BTC"){"7 4"}else{"2 4"} stroke-width="2" vector-effect="non-scaling-stroke"/>}}).collect_view();
     let total = marker_total.max(fills.len());
     let candidates: Vec<_> = fills
         .iter()
@@ -369,7 +411,7 @@ fn Chart(
     } else {
         String::new()
     };
-    view!{<div class="chart"><div class="chart-title">{label}<span>"EUR · net of execution costs"</span></div><svg viewBox="0 0 1100 305" role="img" aria-label=label><defs><linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#258b6a" stop-opacity="0.13"/><stop offset="100%" stop-color="#258b6a" stop-opacity="0"/></linearGradient></defs>{ticks}<polygon points=area fill="url(#equity-fill)"/>{benchmark_lines}<polyline points=line fill="none" stroke="var(--positive)" stroke-width="2.2" stroke-linejoin="round"/>{markers}<text x="65" y="299" fill="var(--muted)" font-size="11">{date(&points[0]["time"])}</text><text x="925" y="299" fill="var(--muted)" font-size="11">{date(&points[points.len()-1]["time"])}</text></svg><div class="legend"><span>"● Strategy"</span>{benchmarks.into_iter().map(|b|view!{<span>{format!("━ {}",text(&b,"name"))}</span>}).collect_view()}</div><p class="chart-note marker-note">{marker_note}</p></div>}.into_any()
+    view!{<div class="chart"><div class="chart-title">{label}<span>"EUR · net of execution costs"</span></div><svg viewBox="0 0 1100 305" role="img" aria-label=label><defs><linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#258b6a" stop-opacity="0.13"/><stop offset="100%" stop-color="#258b6a" stop-opacity="0"/></linearGradient></defs>{ticks}<polygon points=area fill="url(#equity-fill)"/>{benchmark_lines}<polyline points=line fill="none" stroke="var(--positive)" stroke-width="2.2" stroke-linejoin="round"/>{markers}{(0..=4).map(|i|{let t=start+(end-start)*i as f64/4.0;let label=date(&json!(t)).chars().take(if end-start<172_800_000.0{16}else{10}).collect::<String>();view!{<text x=x(t) y="299" text-anchor=if i==0{"start"}else if i==4{"end"}else{"middle"} fill="var(--muted)" font-size="13">{label}</text>}}).collect_view()}</svg><div class="legend-heading">"Final equity"</div><div class="legend" aria-label="Final equity by portfolio"><span class="strategy-legend">"━ Strategy "<b>{xy.last().map(|p|money(p.1)).unwrap_or_default()}</b></span>{benchmarks.into_iter().map(|b|view!{<span style=format!("color:{}",color(&b))><i class="legend-swatch" style=if text(&b,"name").starts_with("BTC"){"border-top-style:dashed"}else{"border-top-style:dotted"}></i>{text(&b,"name")}<b>{items(&b,"equity").last().and_then(|p|p["equity"].as_f64()).map(money).unwrap_or_default()}</b></span>}).collect_view()}</div><p class="chart-note marker-note">{marker_note}</p></div>}.into_any()
 }
 
 fn is_sharpe(v: &Value) -> bool {
@@ -382,7 +424,7 @@ fn score_value(v: &Value, value: &Value) -> String {
     if is_sharpe(v) {
         value
             .as_f64()
-            .map(|n| format!("{n:.3}"))
+            .map(|n| format!("{n:.2}"))
             .unwrap_or_else(|| "—".into())
     } else {
         percent(value)

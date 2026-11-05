@@ -152,7 +152,7 @@ pub fn StrategyPicker(
             version_page.set(f.versions.iter().position(|s|text(s,"id")==id).unwrap_or(0)/PAGE);
         } else {family_page.set(0);}
         if let Some(d)=dialog.get(){let _=d.show_modal();}
-    }><span class="picker-symbol" aria-hidden="true">"◈"</span><span class="picker-label">{label}<small>{move||if selected.get().is_empty(){"Search strategies and versions".into()}else{format!("Version {}",short(&selected.get()))}}</small></span><span aria-hidden="true">"⌄"</span></button>
+    }><span class="picker-symbol" aria-hidden="true">"◈"</span><span class="picker-label">{label}<small>{move||if selected.get().is_empty(){"Browse all versions".into()}else{format!("Version {}",short(&selected.get()))}}</small></span><span aria-hidden="true">"⌄"</span></button>
     <dialog node_ref=dialog on:close=move|_|{if let Some(button)=trigger.get(){let _=button.focus();}} on:keydown=move|ev|{if ev.key()=="Escape"{ev.prevent_default();ev.stop_propagation();if let Some(d)=dialog.get(){d.close();}}} class="strategy-dialog" aria-label="Strategy library" on:click=move|ev|{if ev.target()==ev.current_target() && let Some(d)=dialog.get(){d.close();}}>
       <div class="library-header"><div><h2>"Strategy library"</h2><p>"Find an idea. Choose an exact version."</p></div><button class="icon-button" aria-label="Close strategy library" on:click=move|_|{if let Some(d)=dialog.get(){d.close();}}>"×"</button></div>
       <div class="library-search"><input type="search" aria-label="Search strategies and versions" placeholder="Search names, descriptions, or version IDs…" prop:value=move||query.get() on:input=move|ev|{query.set(event_target_value(&ev));family_page.set(0);version_page.set(0);}/></div>
