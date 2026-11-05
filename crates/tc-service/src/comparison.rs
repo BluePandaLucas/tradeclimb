@@ -1,12 +1,18 @@
 //! Full-resolution, cost-matched diagnostic references. Never optimize on a sampled curve.
 use super::*;
 pub(crate) fn benchmarks(candles: &[Candle], report: &Report) -> Result<Vec<Value>> {
-    benchmarks_with_audit(candles, report, false)
+    benchmarks_with_audit(
+        candles,
+        report,
+        false,
+        tc_engine::DailyPolicy::CompleteSeries,
+    )
 }
 pub(crate) fn benchmarks_with_audit(
     candles: &[Candle],
     report: &Report,
     audit: bool,
+    policy: tc_engine::DailyPolicy,
 ) -> Result<Vec<Value>> {
     ensure_research_window(report.config.start, report.config.end)?;
     let mut values = vec![];
@@ -37,10 +43,10 @@ pub(crate) fn benchmarks_with_audit(
             &mut tc_sdk::Builtin::new(&spec)?,
             |_, _, _| Ok(()),
         )?;
-        let comparison = tc_engine::compare_benchmark(report, &benchmark)?;
+        let comparison = tc_engine::compare_benchmark_with_policy(report, &benchmark, policy)?;
         let mut value = json!({"id":id,"name":name,"net_cagr":benchmark.metrics.net_cagr,"max_drawdown":benchmark.metrics.max_drawdown,"comparison":comparison,"primary_reference":id=="five_asset_buy_hold_v1"});
         if audit {
-            value["daily"] = tc_engine::daily_diagnostics(&benchmark);
+            value["daily"] = tc_engine::daily_diagnostics_with_policy(&benchmark, policy);
             value["historical_stale"] = json!(benchmark.stale);
         } else {
             value["equity"] = json!(sample(&benchmark.equity, 1500));

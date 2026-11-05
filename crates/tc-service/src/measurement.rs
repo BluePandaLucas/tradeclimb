@@ -1,7 +1,15 @@
 //! Versioned explanations of retained development evidence. Never rewrite scores.
 use super::*;
 
+#[cfg(test)]
 pub(crate) fn audit(store: &Store, job: &Job) -> Result<Value> {
+    audit_with_policy(store, job, tc_engine::DailyPolicy::CompleteSeries)
+}
+pub(crate) fn audit_with_policy(
+    store: &Store,
+    job: &Job,
+    policy: tc_engine::DailyPolicy,
+) -> Result<Value> {
     ensure!(job.period == Period::Development, "development jobs only");
     ensure_research_window(job.config.start, job.config.end)?;
     let directory = store.root.join("jobs").join(&job.id);
@@ -26,8 +34,8 @@ pub(crate) fn audit(store: &Store, job: &Job) -> Result<Value> {
         "report_gzip_sha256":report_hash,"request_sha256":digest(&request_bytes),
         "recorded_result_sha256":recorded_bytes.as_ref().map(|b|digest(b)),
         "trace_sha256":trace_bytes.as_ref().map(|b|digest(b)),
-        "config":job.config,"metric_version":"sharpe_daily_v1",
-        "comparison_version":"buy_hold_comparison_daily_v1",
+        "config":job.config,"metric_version":policy.version(),
+        "comparison_version":if policy == tc_engine::DailyPolicy::CompleteSeries {"buy_hold_comparison_daily_v1"} else {"buy_hold_comparison_observed_days_v2"},
         "audit_engine_build_hash":evaluation::engine_build_hash()?,
         "original_execution":origin,
         "original_engine_note":"original_execution is null for legacy jobs; audit engine is identified separately; strategy is never reexecuted"});
@@ -48,7 +56,7 @@ pub(crate) fn audit(store: &Store, job: &Job) -> Result<Value> {
         .into_iter()
         .filter(|c| research_observation(c.time, &report.config))
         .collect();
-    let mut benchmarks = comparison::benchmarks_with_audit(&relevant, &report, true)?;
+    let mut benchmarks = comparison::benchmarks_with_audit(&relevant, &report, true, policy)?;
     let recorded: Option<Value> = recorded_bytes
         .as_ref()
         .and_then(|b| serde_json::from_slice(b).ok());
@@ -58,9 +66,14 @@ pub(crate) fn audit(store: &Store, job: &Job) -> Result<Value> {
             .and_then(|r| r["benchmarks"].as_array())
             .and_then(|rows| rows.iter().find(|r| r["id"] == benchmark["id"]));
         benchmark["recorded_comparison"] = old.map_or(Value::Null, |r| r["comparison"].clone());
-        benchmark["recorded_comparison_match"] = old.map_or(Value::Null, |r| {
-            json!(r["comparison"] == benchmark["comparison"])
-        });
+        benchmark["recorded_comparison_match"] = if policy == tc_engine::DailyPolicy::CompleteSeries
+        {
+            old.map_or(Value::Null, |r| {
+                json!(r["comparison"] == benchmark["comparison"])
+            })
+        } else {
+            Value::Null
+        };
     }
     let trace: Option<Value> = trace_bytes
         .as_ref()
@@ -75,15 +88,15 @@ pub(crate) fn audit(store: &Store, job: &Job) -> Result<Value> {
         })
         .cloned();
     let value = json!({"available":true,"version":"measurement-diagnostics-v1",
-        "provenance":provenance,
-        "strategy":{"daily":tc_engine::daily_diagnostics(&report),
+        "provenance":provenance,"diagnostic_only":true,"ranking_unchanged":true,
+        "strategy":{"daily":tc_engine::daily_diagnostics_with_policy(&report, policy),
             "historical_stale":report.stale,"stale_scope":"cumulative_since_start_including_before_open_refresh",
             "first_stale":first_stale,"first_stale_evidence":"available only when retained trace includes a new-format historical witness; null means unknown, not never stale",
             "stale_policy":"any positive holding older than stale_after_ms before open refresh, after close refresh or at terminal latches historical stale; recovery does not clear it; eligibility fails for any historical violation; daily Sharpe has no staleness mask"},
         "benchmarks":benchmarks,
         "effects":{"strategy_executed":false,"evaluation_created":false,"metrics_overwritten":false,
             "native_references_replayed":true},
-        "interpretation":"A boundary-valid day can be excluded by another day's missing boundary. Audit establishes computability under existing v1 rules, not freshness certification or profitability. If the series is rejected, an explicit owner-approved measurement/campaign decision is needed; do not silently change the objective or insert prices."});
+        "interpretation":if policy == tc_engine::DailyPolicy::CompleteSeries {"A boundary-valid day can be excluded by another day's missing boundary. Audit establishes computability under existing v1 rules, not freshness certification or profitability. If the series is rejected, an explicit owner-approved measurement decision is needed; do not silently change the objective or insert prices."} else {"Opt-in v2 excludes only invalid-boundary days and pairs identical dates for each benchmark comparison; missing-data selection may bias estimates. Original metrics, campaign ranking and eligibility remain v1 and unchanged. Scores do not certify freshness, profitability or independent validation."}});
     save_json(&cache, &value)?;
     Ok(value)
 }
@@ -158,6 +171,27 @@ mod tests {
             assert_eq!(reference["daily"]["included_days"], 0);
             assert_eq!(reference["comparison"]["paired_days"], 0);
             assert_eq!(reference["recorded_comparison_match"], true);
+        }
+        assert_eq!(agent_api::diagnostics(&store, &job.id)?, result);
+        let v2 = agent_api::diagnostics_with_policy(
+            &store,
+            &job.id,
+            tc_engine::DailyPolicy::ObservedDays,
+        )?;
+        assert_eq!(
+            v2["measurement"]["strategy"]["daily"]["metric_version"],
+            "sharpe_observed_days_v2"
+        );
+        assert_eq!(v2["measurement"]["strategy"]["daily"]["included_days"], 1);
+        assert!(v2["measurement"]["strategy"]["daily"]["recorded_metrics_match"].is_null());
+        assert_eq!(v2["metrics"], result["metrics"]);
+        for reference in v2["measurement"]["benchmarks"].as_array().unwrap() {
+            assert_eq!(reference["comparison"]["paired_days"], 1);
+            assert_eq!(
+                reference["comparison"]["version"],
+                "buy_hold_comparison_observed_days_v2"
+            );
+            assert!(reference["recorded_comparison_match"].is_null());
         }
         assert_eq!(agent_api::diagnostics(&store, &job.id)?, result);
         assert_eq!(store.ledger()?, ledger);

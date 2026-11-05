@@ -92,7 +92,7 @@ pub fn capabilities(store: &Store) -> Result<Value> {
         "source":{"language":"rust","files":"src/**/*.rs","max_files":64,"max_file_bytes":65536,"max_total_bytes":262144,"dependencies":"fixed by kit Cargo.lock; no custom manifests or build scripts"},
         "tools":["kit","submit_candidate","candidate_status","cancel_candidate","development_candles","submit_development","job_diagnostics","decision_trace","cancel_job"],
         "transport":{"socket_env":"TC_API_SOCKET","credential_env":"TC_API_TOKEN_FILE","authentication":"Bearer; no owner credential required"},
-        "measurement_diagnostics":{"version":"daily-observation-audit-v1","endpoint":"GET /api/agent/jobs/{id}/diagnostics","policy":"sharpe_daily_v1 is all-or-nothing across complete UTC day boundaries; cumulative stale disqualifies eligibility separately; metrics are never repaired or overwritten by diagnostics"},
+        "measurement_diagnostics":{"version":"daily-observation-audit-v1","daily_policies":["sharpe_daily_v1","sharpe_observed_days_v2"],"selection":"daily_policy query parameter; default sharpe_daily_v1; opt-in v2 is diagnostic only and never rewrites metrics or ranking","endpoint":"GET /api/agent/jobs/{id}/diagnostics","policy":"sharpe_daily_v1 is all-or-nothing across complete UTC day boundaries; cumulative stale disqualifies eligibility separately; metrics are never repaired or overwritten by diagnostics"},
         "objective":"sharpe_daily_v1","benchmark":"five-asset buy-and-hold diagnostics; ranking stays Sharpe",
         "constraints":{"long_only":true,"max_total_weight":"1","markets":MARKETS,"capital":"10000 EUR","fee_bps":25,"slippage_bps":10,"max_drawdown":0.15,"target_cagr_aspiration":0.15,"warmup_minutes":1440},
         "models":{"capabilities":models,"max_unique_calls_per_run":64,"max_output_tokens":2048,"max_prompt_bytes":32768,"preflight":"declared fixtures only; no provider calls"},
@@ -151,6 +151,13 @@ pub fn trace(store: &Store, id: &str) -> Result<Value> {
         .context("trace unavailable: submit development with an explicit trace window")
 }
 pub fn diagnostics(store: &Store, id: &str) -> Result<Value> {
+    diagnostics_with_policy(store, id, tc_engine::DailyPolicy::CompleteSeries)
+}
+pub fn diagnostics_with_policy(
+    store: &Store,
+    id: &str,
+    policy: tc_engine::DailyPolicy,
+) -> Result<Value> {
     let j = development_job(store, id)?;
     let directory = store.root.join("jobs").join(id);
     let failure = read_json::<Value>(&directory.join("diagnostic.json")).ok();
@@ -160,7 +167,7 @@ pub fn diagnostics(store: &Store, id: &str) -> Result<Value> {
         .map(|v| v["metrics"].clone())
         .unwrap_or(Value::Null);
     let trace=read_json::<Value>(&directory.join("trace.json")).ok().map(|v|json!({"frames":v["events"].as_array().map(Vec::len),"truncated":v["truncated"],"request":v["request"]}));
-    let measurement = super::measurement::audit(store, &j)?;
+    let measurement = super::measurement::audit_with_policy(store, &j, policy)?;
     Ok(
         json!({"measurement":measurement,"job":j.id,"state":j.state,"failure":failure.or_else(||j.error.map(|e|json!({"code":"evaluation_error","message":e}))),"metrics":metrics,"trace":trace,"hints":{"undefined_sharpe":"Inspect measurement.strategy.daily and benchmark daily ledgers: v1 rejects the entire series on any invalid UTC boundary; historical stale separately affects eligibility. Do not invent returns across gaps","no_trades":"Check warmup, rolling-window readiness, submitted weights, minimum notional, cash and pending intent expiry","fills":"A decision cannot fill on its generating bar; inspect next-frame fills/pending state","risk":"Halts/stale data and eligibility reasons are part of the result, not compiler failures"}}),
     )

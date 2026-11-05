@@ -658,6 +658,23 @@ fn backtest_impl<const OBSERVE: bool>(
     before_metrics()?;
     sim.finish()
 }
+/// Explicit diagnostic policy. Campaign ranking and recorded Metrics remain v1.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DailyPolicy {
+    #[default]
+    #[serde(rename = "sharpe_daily_v1")]
+    CompleteSeries,
+    #[serde(rename = "sharpe_observed_days_v2")]
+    ObservedDays,
+}
+impl DailyPolicy {
+    pub fn version(self) -> &'static str {
+        match self {
+            Self::CompleteSeries => "sharpe_daily_v1",
+            Self::ObservedDays => "sharpe_observed_days_v2",
+        }
+    }
+}
 /// Daily boundary ledger for the unchanged all-or-nothing sharpe_daily_v1 policy.
 #[derive(Clone, Debug, Serialize)]
 pub struct DailyObservation {
@@ -718,10 +735,22 @@ fn daily_returns(points: &[EquityPoint], start: i64, end: i64) -> Option<Vec<f64
 }
 /// Read-only explanation of retained full-resolution equity, never a replacement score.
 pub fn daily_diagnostics(report: &Report) -> serde_json::Value {
+    daily_diagnostics_with_policy(report, DailyPolicy::CompleteSeries)
+}
+pub fn daily_diagnostics_with_policy(report: &Report, policy: DailyPolicy) -> serde_json::Value {
     let days = daily_observations(&report.equity, report.config.start, report.config.end);
     let valid = days.iter().filter(|d| d.reasons.is_empty()).count();
-    let returns = daily_returns(&report.equity, report.config.start, report.config.end);
-    let (score, included) = daily_sharpe(&report.equity, report.config.start, report.config.end);
+    let returns = match policy {
+        DailyPolicy::CompleteSeries => {
+            daily_returns(&report.equity, report.config.start, report.config.end)
+        }
+        DailyPolicy::ObservedDays => {
+            let observed: Vec<_> = days.iter().filter_map(|d| d.net_return).collect();
+            (!observed.is_empty()).then_some(observed)
+        }
+    };
+    let included = returns.as_ref().map_or(0, Vec::len);
+    let score = returns.as_ref().and_then(|r| daily_ratio(r));
     let mut counts = BTreeMap::<&str, usize>::new();
     for day in &days {
         for reason in &day.reasons {
@@ -731,7 +760,11 @@ pub fn daily_diagnostics(report: &Report) -> serde_json::Value {
     let undefined_reason = if days.is_empty() {
         Some("no_complete_utc_days")
     } else if returns.is_none() {
-        Some("invalid_boundary_rejects_entire_series")
+        Some(if policy == DailyPolicy::CompleteSeries {
+            "invalid_boundary_rejects_entire_series"
+        } else {
+            "no_valid_boundary_pairs"
+        })
     } else if included < 2 {
         Some("insufficient_daily_observations")
     } else if score.is_none() {
@@ -741,17 +774,19 @@ pub fn daily_diagnostics(report: &Report) -> serde_json::Value {
     };
     let observations: Vec<_> = days.iter().map(|day| serde_json::json!({
         "start":day.start,"end":day.end,"boundary_reasons":day.reasons,
-        "included":included > 0,"excluded_by_series_policy":day.reasons.is_empty() && included == 0
+        "included":day.reasons.is_empty() && included > 0,
+        "excluded_by_series_policy":policy == DailyPolicy::CompleteSeries && day.reasons.is_empty() && included == 0
     })).collect();
-    serde_json::json!({"version":"daily-observation-audit-v1","metric_version":"sharpe_daily_v1",
-        "policy":"all complete UTC days require positive finite boundary equity; any missing/invalid boundary rejects the entire series; no intraday-completeness or stale mask is applied to Sharpe; cumulative staleness separately disqualifies run eligibility",
+    serde_json::json!({"version":"daily-observation-audit-v1","metric_version":policy.version(),
+        "policy":if policy == DailyPolicy::CompleteSeries {"all complete UTC days require positive finite boundary equity; any missing/invalid boundary rejects the entire series; no intraday-completeness or stale mask is applied to Sharpe; cumulative staleness separately disqualifies run eligibility"} else {"only complete UTC days with two positive finite retained equity boundaries are included; invalid days alone are excluded; no bridging missing days or filling prices; no intraday-completeness or stale mask; cumulative staleness still separately disqualifies campaign eligibility; diagnostic only, ranking unchanged"},
         "boundary_provenance":"initial capital seeds config.start; finish appends terminal liquidation/valuation at config.end; intervening points come from observed candle-group closes; no forward filling",
         "freshness_evidence":"per-observation mark ages are not retained in Report; boundary presence does not certify fresh holdings",
         "expected_days":days.len(),"boundary_valid_days":valid,"boundary_invalid_days":days.len()-valid,
         "included_days":included,"series_rejected":returns.is_none(),"undefined_reason":undefined_reason,
         "reason_counts":counts,"days":observations,"recomputed_sharpe":score,
         "recorded_sharpe":report.metrics.sharpe,"recorded_sharpe_days":report.metrics.sharpe_days,
-        "recorded_metrics_match":report.metrics.sharpe == score && report.metrics.sharpe_days == included})
+        "recorded_metric_version":"sharpe_daily_v1",
+        "recorded_metrics_match":if policy == DailyPolicy::CompleteSeries {Some(report.metrics.sharpe == score && report.metrics.sharpe_days == included)} else {None}})
 }
 fn daily_sharpe(points: &[EquityPoint], start: i64, end: i64) -> (Option<f64>, usize) {
     let Some(returns) = daily_returns(points, start, end) else {
@@ -812,6 +847,54 @@ pub fn compare_benchmark(strategy: &Report, benchmark: &Report) -> Result<Benchm
         sharpe_difference: ps.zip(bs).map(|(p, b)| p - b),
         information_ratio,
         paired_days,
+        net_return_difference: strategy.metrics.net_return - benchmark.metrics.net_return,
+        cagr_difference: strategy
+            .metrics
+            .net_cagr
+            .zip(benchmark.metrics.net_cagr)
+            .map(|(p, b)| p - b),
+    })
+}
+/// v2 comparisons use the intersection of observed UTC dates for BOTH Sharpes
+/// and active returns, so differing coverage cannot masquerade as timing skill.
+pub fn compare_benchmark_with_policy(
+    strategy: &Report,
+    benchmark: &Report,
+    policy: DailyPolicy,
+) -> Result<BenchmarkComparison> {
+    if policy == DailyPolicy::CompleteSeries {
+        return compare_benchmark(strategy, benchmark);
+    }
+    ensure!(
+        strategy.config.start == benchmark.config.start
+            && strategy.config.end == benchmark.config.end,
+        "benchmark comparison requires identical evaluation dates"
+    );
+    let p = daily_observations(&strategy.equity, strategy.config.start, strategy.config.end);
+    let b: BTreeMap<_, _> = daily_observations(
+        &benchmark.equity,
+        benchmark.config.start,
+        benchmark.config.end,
+    )
+    .into_iter()
+    .filter_map(|d| d.net_return.map(|r| (d.start, r)))
+    .collect();
+    let pairs: Vec<_> = p
+        .into_iter()
+        .filter_map(|d| d.net_return.and_then(|r| b.get(&d.start).map(|v| (r, *v))))
+        .collect();
+    let p: Vec<_> = pairs.iter().map(|(p, _)| *p).collect();
+    let b: Vec<_> = pairs.iter().map(|(_, b)| *b).collect();
+    let active: Vec<_> = pairs.iter().map(|(p, b)| p - b).collect();
+    let ps = daily_ratio(&p);
+    let bs = daily_ratio(&b);
+    Ok(BenchmarkComparison {
+        version: "buy_hold_comparison_observed_days_v2".into(),
+        strategy_sharpe: ps,
+        benchmark_sharpe: bs,
+        sharpe_difference: ps.zip(bs).map(|(p, b)| p - b),
+        information_ratio: ratio_with_variance_floor(&active, 1e-24),
+        paired_days: pairs.len(),
         net_return_difference: strategy.metrics.net_return - benchmark.metrics.net_return,
         cagr_difference: strategy
             .metrics
@@ -1660,6 +1743,29 @@ mod benchmark_tests {
             daily_diagnostics(&p)["reason_counts"]["nonpositive_boundary_equity"],
             2
         );
+    }
+    #[test]
+    fn observed_days_policy_never_bridges_gaps_and_pairs_identical_dates() {
+        let mut p = report(&[0.01, 0.02, -0.01, 0.03, 0.04, -0.02]);
+        let mut b = report(&[0.0, 0.01, 0.03, -0.01, 0.02, 0.01]);
+        p.equity.remove(2);
+        b.equity.remove(4);
+        let old = compare_benchmark(&p, &b).unwrap();
+        assert_eq!(old.paired_days, 0);
+        let policy = DailyPolicy::ObservedDays;
+        let audit = daily_diagnostics_with_policy(&p, policy);
+        assert_eq!(audit["included_days"], 4);
+        assert_eq!(audit["boundary_invalid_days"], 2);
+        assert_eq!(audit["days"][0]["included"], true);
+        assert_eq!(audit["days"][1]["included"], false);
+        assert_eq!(audit["days"][2]["included"], false);
+        let paired = compare_benchmark_with_policy(&p, &b, policy).unwrap();
+        assert_eq!(paired.paired_days, 2);
+        assert_eq!(paired.version, "buy_hold_comparison_observed_days_v2");
+        let expected = daily_ratio(&[0.01, -0.02]).unwrap();
+        assert!((paired.strategy_sharpe.unwrap() - expected).abs() < 1e-12);
+        assert_eq!(compare_benchmark(&p, &b).unwrap().paired_days, 0);
+        assert!(serde_json::from_str::<DailyPolicy>("\"unknown_policy\"").is_err());
     }
     #[test]
     fn historical_staleness_has_a_first_witness_and_recovers_current_marks() {

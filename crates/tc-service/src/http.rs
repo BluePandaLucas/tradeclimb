@@ -564,13 +564,22 @@ async fn candidate_cancel(
 async fn agent_trace(State(app): State<Arc<App>>, RoutePath(id): RoutePath<String>) -> Api<Value> {
     Ok(Json(agent_api::trace(&app.store, &id)?))
 }
+#[derive(Deserialize, Default)]
+struct MeasurementQuery {
+    #[serde(default)]
+    daily_policy: tc_engine::DailyPolicy,
+}
 async fn agent_diagnostics(
     State(app): State<Arc<App>>,
     RoutePath(id): RoutePath<String>,
+    Query(query): Query<MeasurementQuery>,
 ) -> Api<Value> {
     let store = app.store.clone();
     Ok(Json(
-        report_work(&app.store, move || agent_api::diagnostics(&store, &id)).await?,
+        report_work(&app.store, move || {
+            agent_api::diagnostics_with_policy(&store, &id, query.daily_policy)
+        })
+        .await?,
     ))
 }
 async fn submit(

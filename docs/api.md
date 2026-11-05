@@ -170,3 +170,7 @@ job API for terminal state and timing records. It must keep the parent container
 open until the job terminates, cancel TC work explicitly when cancelling that
 container, and compute total run duration from elapsed time rather than summing
 parallel backtests. Matching workload metadata is required for version comparisons.
+
+### Opt-in observed-day measurement diagnostics
+
+`GET /api/agent/jobs/{id}/diagnostics?daily_policy=sharpe_observed_days_v2` selects the owner-authorized diagnostic alternative; omission selects `sharpe_daily_v1`. V2 excludes only invalid-boundary days, never fills or bridges gaps, and computes both strategy/reference Sharpes and active-return information ratios on the same paired UTC dates. Policy, included/excluded counts, full date ledgers and evidence hashes are retained in `measurement`; original `metrics`, ranking and eligibility are unchanged. Coverage selection can bias estimates, and a valid boundary does not prove fresh holdings. This endpoint is development-only and never consumes evaluation/validation/final-test budgets.
