@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='tc-research-ui-') as folder:
     expect(chart.locator('.benchmark-comparison tbody tr')).to_have_count(2)
     page.screenshot(path='/tmp/tradeclimb-v2-research.png',full_page=True)
     assert request('/api/jobs/'+job['id']+'/trades')[1]['total']==original['metrics']['trades']
-    chart.get_by_label('BTC reference',exact=True).uncheck();expect(chart.locator('.benchmark-line')).to_have_count(1)
+    chart.get_by_label('BTC buy & hold',exact=True).uncheck();expect(chart.locator('.benchmark-line')).to_have_count(1)
     assert chart.locator('.benchmark-line').get_attribute('stroke')=='var(--benchmark-basket)'
     expect(chart.locator('.benchmark-comparison tbody tr')).to_have_count(2)
     status,validation=request('/api/jobs',body={'strategy':version,'campaign':job['campaign'],'period':'validation','idempotency_key':'owner-inspection'})
@@ -88,4 +88,4 @@ with tempfile.TemporaryDirectory(prefix='tc-research-ui-') as folder:
     page.get_by_role('button',name='Backtests',exact=True).click();search.wait_for();assert not errors,errors
     browser.close()
   finally:server.send_signal(signal.SIGINT);server.wait(timeout=8);assert server.returncode==0
-print('PASS: solid translucent references, dense-marker suppression without lost trades, benchmark diagnostics, audited owner validation access and persistent agent restrictions')
+print('PASS: distinct benchmark references, dense-marker suppression without lost trades, benchmark diagnostics, audited owner validation access and persistent agent restrictions')

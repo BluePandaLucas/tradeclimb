@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-05",
+  "rubric": "docs/ui-review-prompt.txt",
+  "review_rounds": 22,
+  "required_score_in_every_category": 9.5,
+  "target_met": false,
+  "stop_reason": "User requested stopping after the current revision.",
+  "scope": "Subjective screenshot-only design reviews. The final reviewer received the same prompt and no conversation history. Browser behavior was validated separately.",
+  "baseline_scores": {
+    "Visual hierarchy": 7.2,
+    "Typography and readability": 6.3,
+    "Spacing and information density": 6.8,
+    "Navigation and workflow clarity": 7.0,
+    "Data visualization and financial semantics": 6.7,
+    "Visual consistency and polish": 7.7,
+    "Responsive layout and visible accessibility": 4.0,
+    "State communication and trust": 7.5
+  },
+  "final_scores": {
+    "Visual hierarchy": 9.4,
+    "Typography and readability": 9.4,
+    "Spacing and information density": 9.3,
+    "Navigation and workflow clarity": 9.5,
+    "Data visualization and financial semantics": 9.3,
+    "Visual consistency and polish": 9.5,
+    "Responsive layout and visible accessibility": 9.5,
+    "State communication and trust": 9.6
+  },
+  "remaining_review_notes": [
+    "Clarify Sharpe sampling and annualization near its value.",
+    "Quiet repeated fixture metadata in desktop comparisons.",
+    "Improve the smallest desktop supporting text.",
+    "Further tighten mobile card spacing."
+  ],
+  "validation": [
+    "Release WASM build passed",
+    "WASM Clippy with warnings denied passed",
+    "Rust formatting and Git whitespace checks passed",
+    "Main browser workflow suite passed",
+    "Benchmark and validation-access browser suite passed",
+    "Large-backlog suite passed: 4,803 versions, 2,003 backtests, 240 tuning runs",
+    "Mobile panel clipping, equal metric columns, run-state labels, header clearance, theme preference selection, and Escape focus return verified"
+  ],
+  "screenshots_directory": "var/design-review/screenshots",
+  "data_note": "Isolated synthetic data. Additional after-state counts include actual synthetic tuning and cancelled runs; these are not market performance evidence.",
+  "screenshots": [
+    "before-overview.png",
+    "after-overview.png",
+    "before-detail.png",
+    "after-run-detail.png",
+    "before-mobile.png",
+    "after-mobile.png",
+    "after-mobile-results.png",
+    "after-backtests-dark.png",
+    "after-settings.png"
+  ]
+}

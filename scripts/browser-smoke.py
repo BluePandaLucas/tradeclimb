@@ -68,13 +68,14 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.get_by_role('button',name='Backtests',exact=True).click()
    assert page.locator('.stats').count()==0
    assert page.locator('.controls').count()==1
-   assert 'Fixture' in page.get_by_label('Evaluation campaign').inner_text()
+   assert 'Synthetic' in page.get_by_label('Evaluation campaign').inner_text()
    picker=page.locator('.controls .picker-trigger')
-   initial=next(strategy['id'] for strategy in data['strategies'] if strategy['id'][:8] in picker.inner_text())
-   initial_label=picker.inner_text()
+   strategy_control=page.locator('.controls .strategy-control')
+   initial=next(strategy['id'] for strategy in data['strategies'] if strategy['id'][:8] in strategy_control.inner_text())
+   initial_label=strategy_control.inner_text()
    subprocess.run([str(root/'target/release/tc'),'--data-dir',folder,'builtin','--name','New fixture version'],check=True,capture_output=True)
    page.wait_for_timeout(2200)
-   assert picker.inner_text()==initial_label,'default selection changed while new versions arrived'
+   assert strategy_control.inner_text()==initial_label,'default selection changed while new versions arrived'
    page.get_by_role('button',name='＋ Run backtest',exact=True).click()
    page.wait_for_timeout(1500)
    with urllib.request.urlopen(api_request(f'http://127.0.0.1:{port}/api/overview')) as response:submitted=json.load(response)
@@ -84,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.get_by_role('searchbox',name='Search strategies and versions').fill(value)
    page.locator('dialog[open] .version-option').click()
    page.wait_for_timeout(2200)
-   assert value[:8] in picker.inner_text(),'strategy selection reset after stream update'
+   assert value[:8] in page.locator('.controls .strategy-control').inner_text(),'strategy selection reset after stream update'
    arrivals=page.get_by_role('button',name='Show',exact=False).filter(has_text='new runs')
    if arrivals.count():arrivals.click()
    page.get_by_role('button',name='Trend explorer',exact=True).first.click()
@@ -92,9 +93,9 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.get_by_label('Chart window').select_option('7')
    page.wait_for_timeout(2200)
    assert page.get_by_label('Chart window').input_value()=='7'
-   page.get_by_label('BTC reference',exact=True).uncheck()
+   page.get_by_label('BTC buy & hold',exact=True).uncheck()
    page.wait_for_timeout(1200)
-   assert not page.get_by_label('BTC reference',exact=True).is_checked()
+   assert not page.get_by_label('BTC buy & hold',exact=True).is_checked()
    page.evaluate('window.scrollTo(0,0)')
    page.screenshot(path='/tmp/tradeclimb-desktop.png',full_page=True)
    # A tuning experiment stays one summary; its many trials are opt-in.
@@ -144,7 +145,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert page.locator('.stats').count()==1
    assert page.locator('.controls').count()==0
    page.get_by_role('button',name='Backtests',exact=True).click()
-   assert value[:8] in picker.inner_text(),'selection lost after navigating tabs'
+   assert value[:8] in page.locator('.controls .strategy-control').inner_text(),'selection lost after navigating tabs'
    page.get_by_role('button',name='Leaderboard',exact=True).click()
    page.get_by_role('heading',name='Strategy leaderboard',exact=True).wait_for()
    assert page.locator('.stats,.controls,.run-detail').count()==0
@@ -218,6 +219,31 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.screenshot(path='/tmp/tradeclimb-mobile.png',full_page=True)
    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'),'page overflows mobile viewport'
    page.get_by_role('button',name='Overview',exact=True).click()
+   settings=page.locator('.account-menu>summary')
+   settings.click()
+   choices=page.locator('.theme-options')
+   choices.get_by_role('button',name='Dark',exact=True).click()
+   assert choices.get_by_role('button',name='Dark',exact=True).get_attribute('aria-pressed')=='true'
+   assert page.locator('html').get_attribute('data-theme')=='dark'
+   choices.get_by_role('button',name='System',exact=True).click()
+   assert choices.get_by_role('button',name='System',exact=True).get_attribute('aria-pressed')=='true'
+   assert page.locator('html').get_attribute('data-theme')=='system'
+   page.keyboard.press('Escape')
+   assert not page.locator('.account-menu').evaluate('el=>el.open')
+   assert settings.evaluate('el=>el===document.activeElement')
+   context=page.locator('.research-context-group')
+   assert not context.evaluate('el=>el.open')
+   context.locator('summary').click()
+   assert context.evaluate('el=>el.open')
+   assert 'excluded from development and validation' in context.inner_text()
+   context.locator('summary').click()
+   summary=page.locator('.summary-toggle')
+   assert summary.get_attribute('aria-expanded')=='false'
+   assert not page.locator('.stats').is_visible()
+   summary.click()
+   page.locator('.stats').wait_for()
+   assert summary.get_attribute('aria-expanded')=='true'
+   summary.click()
    filters=page.get_by_role('button',name='Filters ⌄',exact=True)
    assert filters.get_attribute('aria-expanded')=='false'
    assert not page.get_by_role('searchbox',name='Search runs').is_visible()
@@ -226,6 +252,17 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    assert page.get_by_role('button',name='Hide filters',exact=True).get_attribute('aria-expanded')=='true'
    page.get_by_role('button',name='Hide filters',exact=True).click()
    assert page.locator('.evaluation-row').first.locator('.mobile-detail-link').is_visible()
+   assert page.locator('.evaluations').evaluate('el=>el.clientHeight>=el.scrollHeight-1'),'mobile panel clips its contents'
+   assert page.evaluate('document.querySelector(".content").getBoundingClientRect().top>=document.querySelector(".topbar").getBoundingClientRect().bottom'),'header overlaps mobile scroll area'
+   metric_columns=page.locator('.evaluation-row').evaluate_all('rows=>rows.map(row=>[...row.querySelectorAll("td.numeric")].map(cell=>{const r=cell.getBoundingClientRect();return {x:r.x,width:r.width}}))')
+   for columns in metric_columns:
+    assert len(columns)==3
+    assert max(c['width'] for c in columns)-min(c['width'] for c in columns)<1
+    assert all(columns[i+1]['x']-columns[i]['x']-columns[i]['width']>=8 for i in range(2))
+    assert all(abs(columns[i]['x']-metric_columns[0][i]['x'])<1 for i in range(3))
+   mobile_cash=page.locator(f'tr[data-run-id="{cash_id}"] .evaluation-meta')
+   assert 'development' in mobile_cash.inner_text().lower()
+   assert 'completed' in mobile_cash.inner_text().lower()
    page.set_viewport_size({'width':320,'height':740})
    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),'page overflows narrow mobile viewport'
    empty=browser.new_page()

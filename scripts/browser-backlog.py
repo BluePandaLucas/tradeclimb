@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory(prefix='tc-backlog-') as folder:
             selected=dialog.locator('.version-option').last
             version=selected.locator('small').inner_text().split(' · ')[0]
             selected.click()
-            assert version in trigger.inner_text()
+            assert version in page.locator('.controls .strategy-control').inner_text()
             trigger.focus()
             page.keyboard.press('Enter')
             assert dialog.is_visible()
@@ -81,12 +81,17 @@ with tempfile.TemporaryDirectory(prefix='tc-backlog-') as folder:
             assert dialog.is_visible() and search.input_value()=='Adaptive trend 001'
             page.keyboard.press('Escape')
             expect(trigger).to_be_focused()
-            assert version in trigger.inner_text()
+            assert version in page.locator('.controls .strategy-control').inner_text()
             # Older runs are searchable beyond both former 50/500 caps.
             old=json.loads(db.execute('SELECT data FROM jobs ORDER BY rowid ASC LIMIT 1 OFFSET 3').fetchone()[0])
             page.get_by_role('searchbox',name='Search runs').fill(old['id'])
             page.wait_for_function('document.querySelectorAll(".evaluation-row").length===1')
             assert page.locator('.evaluation-row').get_attribute('data-run-id')==old['id']
+            page.locator('.run-window-context summary').click()
+            assert '2024' in page.locator('.run-window-context').inner_text()
+            assert '01-01 00:00' in page.locator('.run-window-context').inner_text()
+            assert '03-09 06:00' in page.locator('.run-window-context').inner_text()
+            page.locator('.run-window-context summary').click()
             page.get_by_role('searchbox',name='Search runs').fill('')
             page.get_by_role('button',name='Next runs',exact=True).click()
             before=page.locator('.evaluation-row').evaluate_all('els=>els.map(el=>el.dataset.runId)')

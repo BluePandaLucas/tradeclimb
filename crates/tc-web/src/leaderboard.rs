@@ -32,7 +32,7 @@ pub fn Leaderboard(
                 </select></label>
                 <p>"Validation comparisons show only the campaign score. No additional validation detail is revealed."</p></div>
                 {if groups.is_empty() {view!{<div class="empty"><h3>"No ranked strategies yet"</h3><p>"Complete a backtest with a defined objective score to enter the leaderboard."</p><button class="secondary" on:click=move|_|tab.set("Backtests".into())>"Go to Backtests"</button></div>}.into_any()}
-                else {view!{<div class="table-scroll"><table><thead><tr><th>"RANK"</th><th>"STRATEGY VERSION"</th><th>{score_label(&group)}</th><th>"ELIGIBILITY"</th><th>"RUN CREATED"</th></tr></thead><tbody>
+                else {view!{<div class="table-scroll"><table><thead><tr><th>"Rank"</th><th>"Strategy version"</th><th>{score_label(&group)}</th><th>"Eligibility"</th><th>"Run created"</th></tr></thead><tbody>
                 {items(&group,"entries").into_iter().map(|entry| {
                     let strategy = strategies.iter().find(|s| s["id"] == entry["strategy"]);
                     let name = strategy.map(|s|text(&s["spec"],"name")).unwrap_or_else(||short(&text(&entry,"strategy")));
