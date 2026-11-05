@@ -700,7 +700,9 @@ async fn job(
             job.result = Some(value);
         }
     }
+    let timing = app.store.get::<timing::Timing>("job_timing", &job.id).ok();
     let mut value = serde_json::to_value(job)?;
+    value["timing"] = serde_json::to_value(timing)?;
     value["owner_detail"] = json!(owner_detail);
     Ok(Json(value))
 }
@@ -906,6 +908,7 @@ async fn run_tuning(
         let job = auth::submit(
             store,
             Submission {
+                timing: None,
                 trace: None,
                 strategy: s.id,
                 campaign: input.campaign.clone(),
@@ -1176,6 +1179,7 @@ mod tests {
             .unwrap();
         let mut job = store
             .submit(Submission {
+                timing: None,
                 trace: None,
                 strategy: strategy.id,
                 campaign: campaign.id,
@@ -1330,6 +1334,7 @@ mod tests {
             store.put("campaign", &campaign.id, &campaign).unwrap();
             let mut job = store
                 .submit(Submission {
+                    timing: None,
                     trace: None,
                     strategy: strategy.id,
                     campaign: campaign.id,

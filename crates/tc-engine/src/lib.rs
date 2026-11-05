@@ -448,6 +448,7 @@ pub fn backtest(
         strategy,
         &mut progress,
         |_, _, _, _| Ok(()),
+        || Ok(()),
     )
 }
 #[derive(Debug)]
@@ -469,7 +470,45 @@ pub fn backtest_with_observer(
     mut progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
     mut observer: impl FnMut(&Frame, &[Intent], &Simulator, Option<&str>) -> Result<()>,
 ) -> Result<Report> {
-    backtest_impl::<true>(candles, config, strategy, &mut progress, &mut observer)
+    backtest_impl::<true>(
+        candles,
+        config,
+        strategy,
+        &mut progress,
+        &mut observer,
+        || Ok(()),
+    )
+}
+/// Phase boundary before terminal liquidation and metric calculation.
+/// Existing backtest entry points retain their behavior.
+pub fn backtest_with_phases(
+    candles: &[Candle],
+    config: RunConfig,
+    strategy: &mut dyn Strategy,
+    progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
+    observer: impl FnMut(&Frame, &[Intent], &Simulator, Option<&str>) -> Result<()>,
+    before_metrics: impl FnMut() -> Result<()>,
+    observe: bool,
+) -> Result<Report> {
+    if observe {
+        backtest_impl::<true>(
+            candles,
+            config,
+            strategy,
+            progress,
+            observer,
+            before_metrics,
+        )
+    } else {
+        backtest_impl::<false>(
+            candles,
+            config,
+            strategy,
+            progress,
+            observer,
+            before_metrics,
+        )
+    }
 }
 fn backtest_impl<const OBSERVE: bool>(
     candles: &[Candle],
@@ -477,6 +516,7 @@ fn backtest_impl<const OBSERVE: bool>(
     strategy: &mut dyn Strategy,
     mut progress: impl FnMut(usize, usize, &Simulator) -> Result<()>,
     mut observer: impl FnMut(&Frame, &[Intent], &Simulator, Option<&str>) -> Result<()>,
+    mut before_metrics: impl FnMut() -> Result<()>,
 ) -> Result<Report> {
     let mut sim = Simulator::new(config)?;
     let costs = ExecutionCosts::new(&sim.config);
@@ -586,6 +626,7 @@ fn backtest_impl<const OBSERVE: bool>(
     }
     ensure!(sim.equity.len() > 1, "no observations in evaluation period");
     progress(candles.len(), candles.len(), &sim)?;
+    before_metrics()?;
     sim.finish()
 }
 /// Use complete UTC days only. Missing day boundaries invalidate the series;

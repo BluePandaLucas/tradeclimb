@@ -119,3 +119,54 @@ The fixed primary comparison is the five-asset buy-and-hold basket; BTC is secon
 `GET /api/jobs/index` filters agent history to development and excludes reserved-window runs; agent job counters are similarly scoped. All API responses remain authenticated and non-cacheable.
 
 Native reference reconstruction and full-report processing share one service semaphore across the owner TCP and agent Unix transports. A permit remains owned by the blocking task even if its HTTP request is cancelled. Metadata/history requests do not acquire it; repeated report requests reuse the private cache.
+
+## Orchestrator timing
+
+`POST /api/jobs` accepts optional timing context alongside the normal submission:
+
+```json
+{"strategy":"ID","campaign":"ID","period":"development","idempotency_key":"attempt-1","timing":{"run_id":"experiment-id","parent_step_id":"backtest-container-id"}}
+```
+
+The CLI equivalent is `tc run --strategy ID --campaign ID --run-id experiment-id
+--parent-step-id backtest-container-id`. Both IDs are required together and must be
+nonempty, at most 200 bytes, without control characters. Existing submissions
+without timing context continue to work and create no timing records.
+
+`GET /api/jobs/{id}` includes `timing` (null for uninstrumented jobs). The durable
+record contains the context, `tc_job_id`, workload `metadata`, and `steps` with
+unique `step_id`, `parent_step_id`, `name`, `category`, `status`, UTC millisecond
+`started_at`/`finished_at`, `duration_ms`, and `duration_source`. Steps share the
+orchestrator backtest container as parent. They cover queued time through worker
+pickup, worker setup, data loading, preprocessing, strategy setup, simulation,
+metric calculation, and result storage. Metric calculation includes terminal
+liquidation. Development result storage includes benchmark computation. Dataset
+loading combines local reads, checksum verification and Parquet decoding; it is
+classified as execution because no isolated external wait is available.
+
+Worker phases use monotonic elapsed time. Queue intervals and supervisor-closed
+phases use wall-clock estimates, explicitly marked `wall_clock`; clock changes
+can affect those estimates. Cancellation, deadline expiry (`timed_out`), failure
+and service interruption close active phases atomically with the job transition.
+Late worker finishes preserve terminal statuses and cannot start new phases.
+Completed worker runs also write `jobs/JOB/timing.json` alongside result artifacts;
+the database/API is authoritative, including after cancellation or worker loss.
+Phase log events include job, run and step IDs (worker logs require a configured
+logging sink). Metadata records the content-addressed dataset and strategy IDs,
+campaign, objective, period, full run configuration, configured instrument count,
+package version, optional build-time `TC_RUNNER_COMMIT`, process worker size, and
+cache assumptions. Set `TC_RUNNER_COMMIT` when building versions for comparison.
+
+A retry uses a new idempotency key and job ID; it creates fresh phase IDs and
+preserves the failed attempt. Replaying an idempotency key returns its original
+job and requires the same timing context. Validation result deduplication still
+returns the original job, with its original timing context; a cache hit does not
+create new phases or reparent that job to a new experiment.
+
+These records live in TC's private SQLite store, **not** the orchestrator Python
+SDK schema. No collector, push delivery, shared-database integration, or automatic
+orchestrator ingestion is provided. A remote orchestrator can poll the authenticated
+job API for terminal state and timing records. It must keep the parent container
+open until the job terminates, cancel TC work explicitly when cancelling that
+container, and compute total run duration from elapsed time rather than summing
+parallel backtests. Matching workload metadata is required for version comparisons.

@@ -42,6 +42,32 @@ Smoke suites use temporary synthetic workspaces and independent ledgers. Test-on
 
 ## Historical evidence
 
+### Buntubox1 persistent-service acceptance (5 November 2026)
+
+The user-service deployment passed `scripts/service-smoke.py`: terminal-free
+startup, graceful stop, automatic restart after SIGKILL during an isolated
+worker, interrupted-job state/worker cleanup, retained owner identity and query
+count, and a restored report/new evaluation with the original state tree hidden.
+The existing workflow smoke also passed registered external-artifact restoration.
+
+On the deployed instance, LAN-address HTTPS returned the UI, anonymous API access
+returned 401 and a source outside the LAN allowlist returned 403. HTTPS sign-in
+set Secure/HttpOnly/SameSite cookies, a foreign Origin was rejected, and a session
+survived automatic service restart. The backend remained loopback-only. Installed
+units passed systemd verification; linger and boot enablement were verified.
+
+`scripts/check`, `cargo deny check`, `scripts/check-sandbox` and
+`scripts/security-smoke.py --agent-account tc-agent` passed on this host.
+The daily backup unit produced a private, integrity-checked backup and the health
+unit reported healthy HTTPS/storage. QA used separate synthetic state and did not
+consume real validation/final observations. The persistent research instance was
+initialized empty; no research-data migration is established by these tests.
+
+A full host reboot was not performed. A bounded overnight health soak is a
+separate runtime observation; its local JSONL report must end with `complete: true`
+before it can be considered passed. These checks do not establish sustained
+research throughput or live-paper-feed reliability.
+
 The original [Bitvavo data audit](data-audit.json) records 9,489,303 candles and documented multi-hour gaps. The strict 60-minute coverage gate rejected it; the owner later explicitly accepted gaps for research in a distinct immutable [accepted snapshot](v2-data-audit.json). The separate [Kraken audit](v2-kraken-audit.json) records the independently accepted comparison dataset. Neither source was silently filled or shortened to improve returns.
 
 A native 20/100 moving-average throughput fixture processed the full Bitvavo snapshot in 10.8 seconds wall time, including verified loading, with 1.69 GiB peak child RSS on a Ryzen 7 5800X and warm caches. Compilation/import were excluded and risk halting disabled to exercise the full window. It emitted no financial feedback. [Exact measurement](performance.json). External IPC/model strategies have different costs.

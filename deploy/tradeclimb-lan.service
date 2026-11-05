@@ -1,0 +1,21 @@
+[Unit]
+Description=TradeClimb LAN HTTPS proxy
+After=tradeclimb.service
+Wants=tradeclimb.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+UMask=0077
+RuntimeDirectory=tradeclimb-proxy
+ExecStartPre=/usr/sbin/nginx -t -c @CONFIG@/nginx.conf
+ExecStart=/usr/sbin/nginx -c @CONFIG@/nginx.conf -g "daemon off;"
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGQUIT
+
+[Install]
+WantedBy=default.target

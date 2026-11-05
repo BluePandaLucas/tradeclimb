@@ -32,6 +32,11 @@ python3 scripts/shutdown-smoke.py
 
 The agent suite uses a temporary synthetic workspace to test real offline candidate builds, deterministic preflight, development data/traces, diagnostics, lineage, cancellation, revocation and restart. All smoke suites use disposable ledgers. `smoke.py --live` additionally observes public paper quotes and recovery without real orders. Live checks require network access and can depend on exchange availability.
 
+For an installed persistent instance, `python3 scripts/service-smoke.py` exercises
+the deployed systemd template against disposable synthetic state, including an
+automatic restart during an isolated worker and backup restoration. See the
+[deployment and bounded soak procedure](operations.md#persistent-service-and-lan-access).
+
 ## Browser QA
 
 Optional Playwright tooling is isolated from application dependencies:

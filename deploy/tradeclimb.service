@@ -1,0 +1,32 @@
+[Unit]
+Description=TradeClimb research and paper trading
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=@RELEASE@/sdk
+Environment="PATH=@HOME@/.cargo/bin:/usr/bin:/bin"
+Environment=RUSTUP_TOOLCHAIN=1.99.1
+Environment=RUST_LOG=info
+Environment=TC_ALLOWED_HOSTS=@HOSTS@
+Environment=XDG_RUNTIME_DIR=%t
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+UMask=0077
+ExecStartPre=@RELEASE@/tc --data-dir @DATA@ sandbox-check
+# Resolve the current symlink via WorkingDirectory before source admission's
+# no-symlink checks; SDK inputs remain pinned to this process's release.
+ExecStart=@RELEASE@/tc --data-dir @DATA@ serve --sdk-root . --assets @RELEASE@/dist --bind 127.0.0.1:8080 --workers 2
+Restart=always
+RestartSec=5
+TimeoutStopSec=40
+KillMode=control-group
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tradeclimb
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+
+[Install]
+WantedBy=default.target

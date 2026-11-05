@@ -17,6 +17,8 @@ Open **http://127.0.0.1:8080**. Sign in with the private owner key located by `t
 
 The interface follows your system theme. Use the header toggle for a remembered light/dark preference, or **System** to follow the OS again. Stop the service with **Ctrl+C**, or type **q** or **exit** and press Enter in its terminal.
 
+For boot persistence and authenticated LAN HTTPS access, use the [user-service deployment](docs/operations.md#persistent-service-and-lan-access). It runs a prebuilt release independently of this checkout and includes backup and health timers.
+
 For a clean real-data research workflow, skip demo and follow the [operations guide](docs/operations.md). Synthetic results are labeled and are not performance evidence.
 
 ## Quality checks
