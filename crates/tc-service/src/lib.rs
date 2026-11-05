@@ -9,6 +9,7 @@ mod evaluation;
 mod http;
 mod inference;
 mod leaderboard;
+mod measurement;
 mod paper;
 mod promotion;
 pub mod timing;
@@ -785,6 +786,15 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
     setup.finish()?;
     let loading = timing::Phase::start(&store, id, "data_loading")?;
     let (_, candles) = tc_data::load(root, &request.dataset)?;
+    save_json(
+        &directory.join("measurement-origin-v1.json"),
+        &json!({
+            "engine_build_hash":evaluation::engine_build_hash()?,
+            "dataset_manifest_hash":evaluation::manifest_hash(&store, &request.dataset)?,
+            "source_hash":registered.source_hash,"executable_hash":registered.executable_hash,
+            "request_sha256":digest(&fs::read(directory.join("request.json"))?)
+        }),
+    )?;
     loading.finish()?;
     let preprocessing = timing::Phase::start(&store, id, "data_preprocessing")?;
     let relevant: Vec<_> = candles

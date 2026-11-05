@@ -568,7 +568,10 @@ async fn agent_diagnostics(
     State(app): State<Arc<App>>,
     RoutePath(id): RoutePath<String>,
 ) -> Api<Value> {
-    Ok(Json(agent_api::diagnostics(&app.store, &id)?))
+    let store = app.store.clone();
+    Ok(Json(
+        report_work(&app.store, move || agent_api::diagnostics(&store, &id)).await?,
+    ))
 }
 async fn submit(
     State(app): State<Arc<App>>,

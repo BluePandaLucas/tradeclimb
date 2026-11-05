@@ -1,6 +1,13 @@
 //! Full-resolution, cost-matched diagnostic references. Never optimize on a sampled curve.
 use super::*;
 pub(crate) fn benchmarks(candles: &[Candle], report: &Report) -> Result<Vec<Value>> {
+    benchmarks_with_audit(candles, report, false)
+}
+pub(crate) fn benchmarks_with_audit(
+    candles: &[Candle],
+    report: &Report,
+    audit: bool,
+) -> Result<Vec<Value>> {
     ensure_research_window(report.config.start, report.config.end)?;
     let mut values = vec![];
     for (id, name, markets) in [
@@ -31,7 +38,14 @@ pub(crate) fn benchmarks(candles: &[Candle], report: &Report) -> Result<Vec<Valu
             |_, _, _| Ok(()),
         )?;
         let comparison = tc_engine::compare_benchmark(report, &benchmark)?;
-        values.push(json!({"id":id,"name":name,"equity":sample(&benchmark.equity,1500),"net_cagr":benchmark.metrics.net_cagr,"max_drawdown":benchmark.metrics.max_drawdown,"comparison":comparison,"primary_reference":id=="five_asset_buy_hold_v1"}));
+        let mut value = json!({"id":id,"name":name,"net_cagr":benchmark.metrics.net_cagr,"max_drawdown":benchmark.metrics.max_drawdown,"comparison":comparison,"primary_reference":id=="five_asset_buy_hold_v1"});
+        if audit {
+            value["daily"] = tc_engine::daily_diagnostics(&benchmark);
+            value["historical_stale"] = json!(benchmark.stale);
+        } else {
+            value["equity"] = json!(sample(&benchmark.equity, 1500));
+        }
+        values.push(value);
     }
     Ok(values)
 }

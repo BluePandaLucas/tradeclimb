@@ -42,7 +42,7 @@ pub struct WalkForward {
     pub results: Vec<Value>,
     pub warnings: Vec<String>,
 }
-fn engine_build_hash() -> Result<String> {
+pub(crate) fn engine_build_hash() -> Result<String> {
     static HASH: std::sync::OnceLock<std::result::Result<String, String>> =
         std::sync::OnceLock::new();
     HASH.get_or_init(|| {
@@ -52,7 +52,7 @@ fn engine_build_hash() -> Result<String> {
     .clone()
     .map_err(anyhow::Error::msg)
 }
-fn manifest_hash(store: &Store, dataset: &str) -> Result<String> {
+pub(crate) fn manifest_hash(store: &Store, dataset: &str) -> Result<String> {
     ensure!(
         dataset.len() == 64 && dataset.bytes().all(|b| b.is_ascii_hexdigit()),
         "invalid dataset identity"

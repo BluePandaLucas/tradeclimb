@@ -19,6 +19,8 @@ pub struct Simulator {
     pub pending: Vec<Pending>,
     pub halted: bool,
     pub stale: bool,
+    #[serde(default)]
+    pub first_stale: Option<serde_json::Value>,
     pub peak: Decimal,
     pub max_drawdown: f64,
     pub equity: Vec<EquityPoint>,
@@ -65,10 +67,41 @@ impl Simulator {
             pending: vec![],
             halted: false,
             stale: false,
+            first_stale: None,
             max_drawdown: 0.0,
             fills: vec![],
             observed: BTreeMap::new(),
         })
+    }
+    /// Current held marks only; the public `stale` flag remains cumulative.
+    pub fn stale_marks(&self, time: i64) -> Vec<serde_json::Value> {
+        self.portfolio
+            .positions
+            .iter()
+            .filter(|(_, p)| {
+                p.quantity > Decimal::ZERO && time - p.observed_at > self.config.stale_after_ms
+            })
+            .map(|(market, p)| {
+                serde_json::json!({"market":market,"observed_at":p.observed_at,
+            "age_ms":time-p.observed_at})
+            })
+            .collect()
+    }
+    fn observe_staleness(&mut self, time: i64, phase: &str) {
+        if self.first_stale.is_some() {
+            self.stale |= self.portfolio.positions.values().any(|p| {
+                p.quantity > Decimal::ZERO && time - p.observed_at > self.config.stale_after_ms
+            });
+            return;
+        }
+        let marks = self.stale_marks(time);
+        if !marks.is_empty() {
+            self.stale = true;
+            if self.first_stale.is_none() {
+                self.first_stale = Some(serde_json::json!({"time":time,"phase":phase,
+                    "stale_after_ms":self.config.stale_after_ms,"marks":marks}));
+            }
+        }
     }
     pub fn liquidation_equity(&self) -> Decimal {
         self.liquidation_equity_with_haircut(ExecutionCosts::new(&self.config).haircut)
@@ -292,9 +325,7 @@ impl Simulator {
         time: i64,
         costs: ExecutionCosts,
     ) -> Result<()> {
-        self.stale |= self.portfolio.positions.values().any(|p| {
-            p.quantity > Decimal::ZERO && time - p.observed_at > self.config.stale_after_ms
-        });
+        self.observe_staleness(time, "before_open_refresh");
         for c in candles {
             if let Some(p) = self.portfolio.positions.get_mut(&c.market) {
                 p.price = c.open;
@@ -359,10 +390,7 @@ impl Simulator {
                 p.observed_at = time;
             }
         }
-        let stale = self.portfolio.positions.values().any(|p| {
-            p.quantity > Decimal::ZERO && time - p.observed_at > self.config.stale_after_ms
-        });
-        self.stale |= stale;
+        self.observe_staleness(time, "after_close_refresh");
         let value = self.liquidation_equity_with_haircut(haircut);
         self.peak = self.peak.max(value);
         let dd = if self.peak > Decimal::ZERO {
@@ -410,6 +438,7 @@ impl Simulator {
     }
     pub fn finish(mut self) -> Result<Report> {
         let time = self.config.end;
+        self.observe_staleness(time, "terminal");
         let holdings: Vec<_> = self
             .portfolio
             .positions
@@ -629,36 +658,100 @@ fn backtest_impl<const OBSERVE: bool>(
     before_metrics()?;
     sim.finish()
 }
-/// Use complete UTC days only. Missing day boundaries invalidate the series;
-/// never fabricate valuations across data gaps. Keep idle/cash days in the sample.
-fn daily_returns(points: &[EquityPoint], start: i64, end: i64) -> Option<Vec<f64>> {
+/// Daily boundary ledger for the unchanged all-or-nothing sharpe_daily_v1 policy.
+#[derive(Clone, Debug, Serialize)]
+pub struct DailyObservation {
+    pub start: i64,
+    pub end: i64,
+    pub net_return: Option<f64>,
+    pub reasons: Vec<&'static str>,
+}
+fn daily_observations(points: &[EquityPoint], start: i64, end: i64) -> Vec<DailyObservation> {
     const DAY: i64 = 86_400_000;
     let first = start.div_euclid(DAY) * DAY + if start.rem_euclid(DAY) == 0 { 0 } else { DAY };
     let last = end.div_euclid(DAY) * DAY;
-    if last <= first {
-        return None;
-    }
     let mut boundaries = BTreeMap::new();
     for p in points {
         if p.time >= first && p.time <= last && p.time.rem_euclid(DAY) == 0 {
-            // Terminal liquidation may replace a mark at the same timestamp.
+            // Terminal liquidation replaces a mark at the same timestamp, as before.
             boundaries.insert(p.time, p.equity);
         }
     }
-    let mut returns = vec![];
+    let mut days = vec![];
     let mut time = first;
     while time < last {
-        let (Some(&before), Some(&after)) = (boundaries.get(&time), boundaries.get(&(time + DAY)))
-        else {
-            return None;
-        };
-        if !before.is_finite() || !after.is_finite() || before <= 0.0 || after <= 0.0 {
-            return None;
+        let mut reasons = vec![];
+        let mut values = vec![];
+        for (at, missing) in [
+            (time, "missing_start_boundary"),
+            (time + DAY, "missing_end_boundary"),
+        ] {
+            match boundaries.get(&at) {
+                None => reasons.push(missing),
+                Some(value) if !value.is_finite() => reasons.push("nonfinite_boundary_equity"),
+                Some(value) if *value <= 0.0 => reasons.push("nonpositive_boundary_equity"),
+                Some(value) => values.push(*value),
+            }
         }
-        returns.push(after / before - 1.0);
+        let net_return = if reasons.is_empty() {
+            Some(values[1] / values[0] - 1.0)
+        } else {
+            None
+        };
+        days.push(DailyObservation {
+            start: time,
+            end: time + DAY,
+            net_return,
+            reasons,
+        });
         time += DAY;
     }
-    Some(returns)
+    days
+}
+/// Missing/nonpositive boundaries invalidate the entire v1 series. Never fill gaps.
+fn daily_returns(points: &[EquityPoint], start: i64, end: i64) -> Option<Vec<f64>> {
+    let days = daily_observations(points, start, end);
+    if days.is_empty() {
+        return None;
+    }
+    days.into_iter().map(|d| d.net_return).collect()
+}
+/// Read-only explanation of retained full-resolution equity, never a replacement score.
+pub fn daily_diagnostics(report: &Report) -> serde_json::Value {
+    let days = daily_observations(&report.equity, report.config.start, report.config.end);
+    let valid = days.iter().filter(|d| d.reasons.is_empty()).count();
+    let returns = daily_returns(&report.equity, report.config.start, report.config.end);
+    let (score, included) = daily_sharpe(&report.equity, report.config.start, report.config.end);
+    let mut counts = BTreeMap::<&str, usize>::new();
+    for day in &days {
+        for reason in &day.reasons {
+            *counts.entry(reason).or_default() += 1;
+        }
+    }
+    let undefined_reason = if days.is_empty() {
+        Some("no_complete_utc_days")
+    } else if returns.is_none() {
+        Some("invalid_boundary_rejects_entire_series")
+    } else if included < 2 {
+        Some("insufficient_daily_observations")
+    } else if score.is_none() {
+        Some("zero_variance_or_nonfinite_ratio")
+    } else {
+        None
+    };
+    let observations: Vec<_> = days.iter().map(|day| serde_json::json!({
+        "start":day.start,"end":day.end,"boundary_reasons":day.reasons,
+        "included":included > 0,"excluded_by_series_policy":day.reasons.is_empty() && included == 0
+    })).collect();
+    serde_json::json!({"version":"daily-observation-audit-v1","metric_version":"sharpe_daily_v1",
+        "policy":"all complete UTC days require positive finite boundary equity; any missing/invalid boundary rejects the entire series; no intraday-completeness or stale mask is applied to Sharpe; cumulative staleness separately disqualifies run eligibility",
+        "boundary_provenance":"initial capital seeds config.start; finish appends terminal liquidation/valuation at config.end; intervening points come from observed candle-group closes; no forward filling",
+        "freshness_evidence":"per-observation mark ages are not retained in Report; boundary presence does not certify fresh holdings",
+        "expected_days":days.len(),"boundary_valid_days":valid,"boundary_invalid_days":days.len()-valid,
+        "included_days":included,"series_rejected":returns.is_none(),"undefined_reason":undefined_reason,
+        "reason_counts":counts,"days":observations,"recomputed_sharpe":score,
+        "recorded_sharpe":report.metrics.sharpe,"recorded_sharpe_days":report.metrics.sharpe_days,
+        "recorded_metrics_match":report.metrics.sharpe == score && report.metrics.sharpe_days == included})
 }
 fn daily_sharpe(points: &[EquityPoint], start: i64, end: i64) -> (Option<f64>, usize) {
     let Some(returns) = daily_returns(points, start, end) else {
@@ -1534,5 +1627,71 @@ mod benchmark_tests {
         assert_eq!(c.paired_days, 0);
         b.config.end += MINUTE;
         assert!(compare_benchmark(&p, &b).is_err());
+    }
+    #[test]
+    fn daily_audit_distinguishes_local_boundary_validity_from_series_rejection() {
+        let mut p = report(&[0.02, 0.01, 0.06, -0.01]);
+        p.metrics.sharpe = daily_sharpe(&p.equity, p.config.start, p.config.end).0;
+        p.metrics.sharpe_days = 4;
+        let valid = daily_diagnostics(&p);
+        assert_eq!(valid["recorded_metrics_match"], true);
+        assert_eq!(valid["included_days"], 4);
+        p.equity.remove(3); // Both adjacent days fail, earlier days remain locally complete.
+        p.metrics.sharpe = None;
+        p.metrics.sharpe_days = 0;
+        let audit = daily_diagnostics(&p);
+        assert_eq!(audit["expected_days"], 4);
+        assert_eq!(audit["boundary_valid_days"], 2);
+        assert_eq!(audit["boundary_invalid_days"], 2);
+        assert_eq!(audit["included_days"], 0);
+        assert_eq!(audit["days"][0]["excluded_by_series_policy"], true);
+        assert_eq!(audit["reason_counts"]["missing_start_boundary"], 1);
+        assert_eq!(audit["reason_counts"]["missing_end_boundary"], 1);
+        assert_eq!(audit["recorded_metrics_match"], true);
+        let constant = daily_diagnostics(&report(&[0.0; 4]));
+        assert_eq!(constant["included_days"], 4);
+        assert_eq!(constant["series_rejected"], false);
+        assert_eq!(
+            constant["undefined_reason"],
+            "zero_variance_or_nonfinite_ratio"
+        );
+        p.equity[1].equity = 0.0;
+        assert_eq!(
+            daily_diagnostics(&p)["reason_counts"]["nonpositive_boundary_equity"],
+            2
+        );
+    }
+    #[test]
+    fn historical_staleness_has_a_first_witness_and_recovers_current_marks() {
+        let mut sim = Simulator::new(RunConfig::new(0, 20 * MINUTE)).unwrap();
+        sim.portfolio.positions.insert(
+            "BTC-EUR".into(),
+            Position {
+                quantity: Decimal::ONE,
+                price: 100.into(),
+                observed_at: 0,
+            },
+        );
+        sim.mark(&[], 5 * MINUTE).unwrap();
+        assert!(!sim.stale); // Strictly older than the configured threshold.
+        sim.mark(&[], 6 * MINUTE).unwrap();
+        assert!(sim.stale);
+        let first = sim.first_stale.clone();
+        assert_eq!(first.as_ref().unwrap()["marks"][0]["market"], "BTC-EUR");
+        let candle = Candle {
+            market: "BTC-EUR".into(),
+            time: 7 * MINUTE,
+            open: 100.into(),
+            high: 100.into(),
+            low: 100.into(),
+            close: 100.into(),
+            volume: 1.into(),
+        };
+        sim.open(std::slice::from_ref(&candle), 7 * MINUTE).unwrap();
+        sim.mark(&[candle], 8 * MINUTE).unwrap();
+        assert!(sim.stale);
+        assert!(sim.stale_marks(8 * MINUTE).is_empty());
+        assert_eq!(sim.first_stale, first);
+        assert_eq!(sim.first_stale.unwrap()["phase"], "after_close_refresh");
     }
 }

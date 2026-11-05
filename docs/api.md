@@ -19,7 +19,7 @@ The `leaderboards` array compares completed runs across the full retained histor
 | POST | `/api/agent/candidates/{id}/cancel` | Cancel candidate; safe to repeat |
 | GET | `/api/agent/candles` | Bounded, checksum-verified development candle slice |
 | GET | `/api/agent/jobs/{id}/trace` | Requested development frame/decision/fill trace |
-| GET | `/api/agent/jobs/{id}/diagnostics` | Development metrics, runtime failure and trace metadata |
+| GET | `/api/agent/jobs/{id}/diagnostics` | Development metrics, runtime failure, trace metadata and versioned measurement audits (UTC day exclusions, native reference comparisons and evidence hashes) |
 | GET | `/api/overview` | Strategies, campaigns, recent jobs, leaderboards, paper sessions, datasets, tuning status, validation ledger |
 | GET | `/api/events` | SSE overview snapshots; validation includes no curves or granular progress |
 | POST | `/api/jobs` | Submit a registered strategy to a fixed campaign |
