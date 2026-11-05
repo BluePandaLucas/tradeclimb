@@ -365,6 +365,31 @@ Import using `target/release/tc import-kraken var/kraken-research-csv`. The mani
 
 The imported 2022-11-01–2026-08-01 snapshot contains 7,919,484 candles. It fails strict coverage with 411–419-minute gaps on 14 April 2024 and was explicitly accepted by the owner for research-only comparison on 4 November 2026. The strict failed snapshot and a new approved immutable snapshot are both retained. The [metadata-only audit](v2-kraken-audit.json) records campaign creation before any Kraken evaluations. The separate Kraken approval does not alter Bitvavo data or waive valuation/risk eligibility.
 
+### Kraken campaign in the persistent service
+
+On 5 November 2026, the original accepted Kraken snapshot was copied from the retained research worktree (`/home/lucas/.t3/worktrees/tradeclimb/t3-42665a60/var/`) into `~/.local/share/tradeclimb/datasets/`. It had been absent from the persistent installation. The complete manifest matched `accepted_manifest` in the audit, and all 225 partition SHA-256 checks passed (7,919,484 candles). The copy was staged outside `datasets/` and renamed into place only after verification. The campaign was then recreated through the installed CLI and both objects were verified through the running service's authenticated `/api/overview`. No service restart or evaluation was needed.
+
+Select **Kraken 3a1a4d25** in the **Evaluation campaign** dropdown. The primary Bitvavo campaign remains the initial default.
+
+| Field | Value |
+| --- | --- |
+| Dataset | `3a1a4d25916723b1604533a1227a7372363131739d132b38834aa4e603a243f1` |
+| Campaign | `9a9e4cb9d8ea68e845705a5cccdb29e05b8c54c0e07f00ce986f3383008aed51` |
+| Objective | `sharpe_daily_v1` |
+| Development | `[2022-11-01, 2025-11-01)` UTC |
+| Validation | `[2025-11-01, 2026-08-01)` UTC; existing global owner-controlled budget |
+| Final test | None for this snapshot |
+
+To recreate this campaign after restoring the same verified dataset into the persistent data directory:
+
+```bash
+~/.local/lib/tradeclimb/current/tc --data-dir ~/.local/share/tradeclimb \
+  campaign 3a1a4d25916723b1604533a1227a7372363131739d132b38834aa4e603a243f1 \
+  --objective sharpe_daily_v1 --target-cagr 0.15
+```
+
+This command is idempotent for these inputs and reproduces the audited campaign identity. It does not copy dataset files or run evaluations. The committed audit contains metadata only; preserve the persistent dataset through the normal complete-directory backups rather than relying on the old worktree.
+
 ## Forward execution evidence
 
 `python3 scripts/record-books.py var/books-SESSION --seconds 3600 --interval 5` records bounded, read-only Bitvavo depth snapshots for all five markets. Each JSONL event retains original response JSON/hash, server nanosecond timestamp/nonce, local send/receive times, monotonic request duration and explicit errors/rate-limit pauses. The closed recording has a checksum manifest and defaults to a 1-GiB/one-day maximum. A fresh destination prevents accidental overwrite. Ctrl+C seals the captured recording; a hard crash leaves a partial JSONL file without a completed manifest.
