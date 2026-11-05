@@ -126,6 +126,15 @@ pub fn revoke_agent(store: &Store, id: &str) -> Result<()> {
         "unknown agent credential"
     );
     tx.execute("UPDATE jobs SET data=json_set(data,'$.state','cancelled','$.updated_at',?1) WHERE id IN (SELECT id FROM objects WHERE kind='job_agent' AND json_extract(data,'$.id')=?2) AND json_extract(data,'$.state') IN ('queued','preparing','running')",params![now(),id])?;
+    let cancelled = {
+        let mut query = tx.prepare("SELECT id FROM jobs WHERE id IN (SELECT id FROM objects WHERE kind='job_agent' AND json_extract(data,'$.id')=?1) AND json_extract(data,'$.state')='cancelled'")?;
+        query
+            .query_map([id], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for job in cancelled {
+        timing::terminal(&tx, &job, "cancelled")?;
+    }
     tx.execute("UPDATE objects SET data=json_set(data,'$.state','cancelled') WHERE kind='tuning' AND json_extract(data,'$.agent')=?1 AND json_extract(data,'$.state')='running'",[id])?;
     tx.execute(
         "INSERT INTO objects VALUES('audit',?1,?2)",
@@ -387,6 +396,10 @@ mod tests {
             )
             .unwrap();
         let request = Submission {
+            timing: Some(timing::TimingContext {
+                run_id: "run".into(),
+                parent_step_id: "step".into(),
+            }),
             trace: None,
             strategy: s.id,
             campaign: c.id,
@@ -422,6 +435,8 @@ mod tests {
         revoked.join().unwrap();
         for job in store.jobs().unwrap() {
             assert_eq!(job.state, "cancelled");
+            let timing: timing::Timing = store.get("job_timing", &job.id).unwrap();
+            assert!(timing.steps.iter().all(|s| s.status == "cancelled"));
             assert_eq!(
                 store.get::<Value>("job_agent", &job.id).unwrap()["id"],
                 agent

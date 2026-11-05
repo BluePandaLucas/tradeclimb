@@ -96,6 +96,10 @@ enum Action {
         objective: String,
     },
     Run {
+        #[arg(long, requires = "parent_step_id")]
+        run_id: Option<String>,
+        #[arg(long, requires = "run_id")]
+        parent_step_id: Option<String>,
         #[arg(long)]
         strategy: String,
         #[arg(long)]
@@ -312,6 +316,7 @@ fn main() -> Result<()> {
                 };
                 let s = store.register(spec, None, None)?;
                 let j = store.submit(Submission {
+                    timing: None,
                     trace: None,
                     strategy: s.id.clone(),
                     campaign: campaign.id.clone(),
@@ -390,12 +395,20 @@ fn main() -> Result<()> {
             serde_json::from_value(serde_json::json!(objective))?,
         )?),
         Action::Run {
+            run_id,
+            parent_step_id,
             strategy,
             campaign,
             validation,
             key,
             slippage_bps,
         } => print(&store.submit(Submission {
+            timing: run_id.zip(parent_step_id).map(|(run_id, parent_step_id)| {
+                tc_service::timing::TimingContext {
+                    run_id,
+                    parent_step_id,
+                }
+            }),
             trace: None,
             strategy,
             campaign,

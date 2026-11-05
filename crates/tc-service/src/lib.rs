@@ -11,6 +11,7 @@ mod inference;
 mod leaderboard;
 mod paper;
 mod promotion;
+pub mod timing;
 use anyhow::{Context, Result, ensure};
 pub use build::{build_strategy, sandbox_check};
 pub use evaluation::{FinalPlan, WalkForward};
@@ -96,6 +97,8 @@ pub enum Period {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Submission {
     #[serde(default)]
+    pub timing: Option<timing::TimingContext>,
+    #[serde(default)]
     pub trace: Option<agent_api::TraceRequest>,
     pub strategy: String,
     pub campaign: String,
@@ -122,6 +125,8 @@ pub struct Job {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkerRequest {
+    #[serde(default)]
+    pub timing: Option<timing::TimingContext>,
     #[serde(default)]
     pub trace: Option<agent_api::TraceRequest>,
     #[serde(default)]
@@ -402,10 +407,26 @@ impl Store {
         Ok(serde_json::from_str(&text)?)
     }
     pub fn update_job(&self, job: &Job) -> Result<()> {
-        self.db()?.execute(
+        let mut db = self.db()?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
             "UPDATE jobs SET data=?1 WHERE id=?2 AND (json_extract(data,'$.state') != 'cancelled' OR json_extract(?1,'$.state') = 'cancelled')",
             params![serde_json::to_string(job)?, job.id],
         )?;
+        if changed > 0
+            && matches!(
+                job.state.as_str(),
+                "completed" | "failed" | "cancelled" | "interrupted"
+            )
+        {
+            let state = if job.error.as_deref() == Some("worker deadline exceeded") {
+                "timed_out"
+            } else {
+                &job.state
+            };
+            timing::terminal(&tx, &job.id, state)?;
+        }
+        tx.commit()?;
         Ok(())
     }
     pub fn submit(&self, request: Submission) -> Result<Job> {
@@ -416,6 +437,9 @@ impl Store {
             !request.idempotency_key.is_empty() && request.idempotency_key.len() <= 200,
             "idempotency key required"
         );
+        if let Some(context) = &request.timing {
+            context.validate()?;
+        }
         let strategy: RegisteredStrategy = self.get("strategy", &request.strategy)?;
         ensure!(!strategy.archived, "strategy archived");
         let campaign: Campaign = self.get("campaign", &request.campaign)?;
@@ -478,6 +502,14 @@ impl Store {
                 old == fingerprint,
                 "idempotency key already used for different inputs"
             );
+            let existing: Option<String> = tx.query_row("SELECT data FROM objects WHERE kind='job_timing' AND id=json_extract(?1,'$.id')", [&data], |r| r.get(0)).optional()?;
+            let context = existing
+                .map(|data| serde_json::from_str::<timing::Timing>(&data).map(|t| t.context))
+                .transpose()?;
+            ensure!(
+                context == request.timing,
+                "idempotency key already used with different timing context"
+            );
             return Ok(serde_json::from_str(&data)?);
         }
         if request.period == Period::Validation {
@@ -516,6 +548,7 @@ impl Store {
             config: config.clone(),
         };
         let worker = WorkerRequest {
+            timing: request.timing.clone(),
             trace: request.trace.clone(),
             objective: campaign.objective,
             id: id.clone(),
@@ -537,6 +570,9 @@ impl Store {
                 serde_json::to_string(&job)?
             ],
         )?;
+        if let Some(context) = &request.timing {
+            timing::create(&tx, &job, context, &worker.dataset, &worker.spec)?;
+        }
         if let Some(agent) = agent {
             tx.execute(
                 "INSERT INTO objects VALUES('job_agent',?1,?2)",
@@ -743,13 +779,20 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
     ensure_research_window(request.config.start, request.config.end)?;
     let store = Store::open(root)?;
     let job = store.job(id)?;
+    let setup = timing::Phase::start(&store, id, "worker_setup")?;
     let registered: RegisteredStrategy = store.get("strategy", &job.strategy)?;
     request.spec = store.resolve_strategy(&registered)?;
+    setup.finish()?;
+    let loading = timing::Phase::start(&store, id, "data_loading")?;
     let (_, candles) = tc_data::load(root, &request.dataset)?;
+    loading.finish()?;
+    let preprocessing = timing::Phase::start(&store, id, "data_preprocessing")?;
     let relevant: Vec<_> = candles
         .into_iter()
         .filter(|c| research_observation(c.time, &request.config))
         .collect();
+    preprocessing.finish()?;
+    let setup = timing::Phase::start(&store, id, "strategy_setup")?;
     let _broker = matches!(request.spec.kind, StrategyKind::Executable { .. })
         .then(|| broker::ModelBroker::start(store.clone(), id))
         .transpose()?;
@@ -763,6 +806,8 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
         }
         _ => tc_engine::strategy(&request.spec)?,
     };
+    setup.finish()?;
+    let mut phase = Some(timing::Phase::start(&store, id, "simulation")?);
     let mut last = Instant::now() - Duration::from_secs(1);
     let mut trace = agent_api::TraceCollector::new(request.trace.clone());
     let progress = |index: usize, total: usize, sim: &tc_engine::Simulator| {
@@ -777,17 +822,34 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
         }
         Ok(())
     };
-    let outcome = if request.trace.is_some() {
-        tc_engine::backtest_with_observer(
-            &relevant,
-            request.config,
-            strategy.as_mut(),
-            progress,
-            |frame, intents, sim, error| trace.observe(frame, intents, sim, error),
-        )
-    } else {
-        tc_engine::backtest(&relevant, request.config, strategy.as_mut(), progress)
-    };
+    let observe = request.trace.is_some();
+    let outcome = tc_engine::backtest_with_phases(
+        &relevant,
+        request.config,
+        strategy.as_mut(),
+        progress,
+        |frame, intents, sim, error| {
+            if observe {
+                trace.observe(frame, intents, sim, error)
+            } else {
+                Ok(())
+            }
+        },
+        || {
+            if let Some(simulation) = phase.take() {
+                simulation.finish()?;
+            }
+            phase = Some(timing::Phase::start(&store, id, "metric_calculation")?);
+            Ok(())
+        },
+        observe,
+    );
+    if outcome.is_ok()
+        && let Some(completed) = phase.take()
+    {
+        completed.finish()?;
+    }
+    drop(phase);
     if request.period == Period::Development {
         trace.save(&directory.join("trace.json"))?;
         if let Err(error) = &outcome {
@@ -803,6 +865,7 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
     }
     let report = outcome?;
 
+    let storage = timing::Phase::start(&store, id, "result_storage")?;
     let mut zip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     serde_json::to_writer(&mut zip, &report)?;
     tc_data::atomic_write(&directory.join("report.json.gz"), &zip.finish()?)?;
@@ -815,6 +878,10 @@ pub fn worker(root: &Path, id: &str) -> Result<()> {
         value
     };
     save_json(&directory.join("result.json"), &result)?;
+    storage.finish()?;
+    if let Ok(timing) = store.get::<timing::Timing>("job_timing", id) {
+        save_json(&directory.join("timing.json"), &timing)?;
+    }
     Ok(())
 }
 fn summary_result(mut value: Value) -> Value {
@@ -1089,6 +1156,7 @@ mod tests {
     }
     fn request(strategy: &str, campaign: &str, key: &str) -> Submission {
         Submission {
+            timing: None,
             trace: None,
             strategy: strategy.into(),
             campaign: campaign.into(),
@@ -1096,6 +1164,145 @@ mod tests {
             idempotency_key: key.into(),
             slippage_bps: None,
         }
+    }
+    fn timed_request(strategy: &str, campaign: &str, key: &str) -> Submission {
+        let mut request = request(strategy, campaign, key);
+        request.period = Period::Development;
+        request.timing = Some(timing::TimingContext {
+            run_id: "experiment".into(),
+            parent_step_id: "backtest".into(),
+        });
+        request
+    }
+    #[test]
+    fn timing_survives_handoff_success_failure_and_retry() {
+        let (_dir, store, strategy, campaign) = setup();
+        let failed = store
+            .submit(timed_request(&strategy, &campaign, "fail"))
+            .unwrap();
+        assert!(worker(&store.root, &failed.id).is_err());
+        let mut failed_job = store.job(&failed.id).unwrap();
+        failed_job.state = "failed".into();
+        store.update_job(&failed_job).unwrap();
+        let failed_timing: timing::Timing = store.get("job_timing", &failed.id).unwrap();
+        assert!(
+            failed_timing
+                .steps
+                .iter()
+                .any(|s| s.name == "data_loading" && s.status == "failed")
+        );
+        let rows = (0..30)
+            .map(|i| Candle {
+                market: "BTC-EUR".into(),
+                time: i * MINUTE,
+                open: 100.into(),
+                high: 100.into(),
+                low: 100.into(),
+                close: 100.into(),
+                volume: 100.into(),
+            })
+            .collect();
+        let dataset = tc_data::snapshot(&store.root, rows, 0, 30 * MINUTE, true, true).unwrap();
+        let mut c: Campaign = store.get("campaign", &campaign).unwrap();
+        c.dataset = dataset.id;
+        store.put("campaign", &campaign, &c).unwrap();
+        let retry = store
+            .submit(timed_request(&strategy, &campaign, "retry"))
+            .unwrap();
+        let payload: WorkerRequest =
+            read_json(&store.root.join("jobs").join(&retry.id).join("request.json")).unwrap();
+        assert_eq!(payload.timing.unwrap().run_id, "experiment");
+        worker(&store.root, &retry.id).unwrap();
+        let reopened = Store::open(&store.root).unwrap();
+        let timing: timing::Timing = reopened.get("job_timing", &retry.id).unwrap();
+        assert_eq!(
+            timing
+                .steps
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "queued",
+                "worker_setup",
+                "data_loading",
+                "data_preprocessing",
+                "strategy_setup",
+                "simulation",
+                "metric_calculation",
+                "result_storage"
+            ]
+        );
+        assert!(
+            timing
+                .steps
+                .iter()
+                .all(|s| s.status == "succeeded" && s.duration_ms.is_some())
+        );
+        assert!(timing.steps.iter().all(|s| {
+            failed_timing
+                .steps
+                .iter()
+                .all(|old| old.step_id != s.step_id)
+        }));
+        let artifact: timing::Timing =
+            read_json(&store.root.join("jobs").join(&retry.id).join("timing.json")).unwrap();
+        assert_eq!(artifact.steps.len(), timing.steps.len());
+        let original: timing::Timing = reopened.get("job_timing", &failed.id).unwrap();
+        assert_eq!(
+            serde_json::to_value(original).unwrap(),
+            serde_json::to_value(failed_timing).unwrap()
+        );
+    }
+    #[test]
+    fn timing_cancellation_timeout_and_interruption_close_active_steps() {
+        let (_dir, store, strategy, campaign) = setup();
+        for state in ["cancelled", "failed", "interrupted"] {
+            let mut job = store
+                .submit(timed_request(&strategy, &campaign, state))
+                .unwrap();
+            let phase = timing::Phase::start(&store, &job.id, "simulation").unwrap();
+            job.state = state.into();
+            if state == "failed" {
+                job.error = Some("worker deadline exceeded".into());
+            }
+            store.update_job(&job).unwrap();
+            // Late successful worker events may neither reopen nor overwrite terminal steps.
+            phase.finish().unwrap();
+            assert!(timing::Phase::start(&store, &job.id, "late").is_err());
+            let timing: timing::Timing = store.get("job_timing", &job.id).unwrap();
+            assert_eq!(
+                timing.steps[1].status,
+                if state == "failed" {
+                    "timed_out"
+                } else {
+                    state
+                }
+            );
+            assert!(timing.steps.iter().all(|s| s.finished_at.is_some()));
+        }
+        let queued = store
+            .submit(timed_request(&strategy, &campaign, "queued-cancel"))
+            .unwrap();
+        store.cancel(&queued.id).unwrap();
+        let timing: timing::Timing = store.get("job_timing", &queued.id).unwrap();
+        assert_eq!(timing.steps[0].status, "cancelled");
+    }
+    #[test]
+    fn timing_is_optional_and_idempotent() {
+        let (_dir, store, strategy, campaign) = setup();
+        let mut input = timed_request(&strategy, &campaign, "timed");
+        let first = store.submit(input.clone()).unwrap();
+        assert_eq!(store.submit(input.clone()).unwrap().id, first.id);
+        input.timing.as_mut().unwrap().run_id = "other".into();
+        assert!(store.submit(input).is_err());
+        let plain = store
+            .submit(request(&strategy, &campaign, "plain"))
+            .unwrap();
+        assert!(
+            store
+                .get::<timing::Timing>("job_timing", &plain.id)
+                .is_err()
+        );
     }
     #[test]
     fn validation_trace_is_rejected_before_query_reservation() {
@@ -1169,6 +1376,7 @@ mod tests {
         assert!(
             store
                 .submit(Submission {
+                    timing: None,
                     trace: None,
                     period: Period::Development,
                     ..request
