@@ -38,8 +38,22 @@ Do not mask an existing proxy used by other applications. This deployment runs i
 own unprivileged nginx process with a separate configuration. Buntubox1 uses
 **https://192.168.0.223:8443** (or `https://buntubox1:8443` if the client resolves
 that name). Port 8080 stays on loopback; port 8443 permits only loopback and
-`192.168.0.0/24`. No router port forwarding is needed. Reserve this LAN IP in DHCP;
+`192.168.0.0/24`, plus explicitly configured client addresses/subnets. No router port forwarding is needed. Reserve this LAN IP in DHCP;
 if it changes, regenerate the certificate for the new address and rerun installation.
+
+Clients arriving from another routed subnet need an explicit allow entry.
+Buntubox1 also allows the owner's `10.0.10.0/24` subnet:
+
+```bash
+./scripts/install-service --lan-ip 192.168.0.223 --lan-cidr 192.168.0.0/24 \
+  --hostname buntubox1 --allow-client 10.0.10.0/24 --proxy-only
+```
+
+This validates and reloads only the proxy; TradeClimb and active evaluations keep
+running. Extra addresses/subnets are saved in `~/.config/tradeclimb/access.json` and
+preserved when `--allow-client` is omitted on later deployments. Supplying the flag
+replaces that saved list; repeat it to allow multiple addresses or subnets.
+Authentication is still required.
 
 The first installation creates a one-year self-signed certificate in
 `~/.config/tradeclimb/lan.crt`, with the private key next to it. Verify its

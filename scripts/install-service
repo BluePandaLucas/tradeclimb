@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import ipaddress
+import json
 import os
 import pathlib
 import shutil
@@ -14,6 +15,9 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--lan-ip', required=True)
 parser.add_argument('--lan-cidr', required=True)
 parser.add_argument('--hostname', default='buntubox1')
+parser.add_argument('--allow-client', action='append', type=lambda value: ipaddress.IPv4Network(value, strict=False),
+                    help='Additional client IPv4 address or subnet; repeat for multiple entries. Omit to preserve saved entries.')
+parser.add_argument('--proxy-only', action='store_true', help='Update and reload LAN access without restarting TradeClimb')
 args = parser.parse_args()
 ip = ipaddress.IPv4Address(args.lan_ip)
 network = ipaddress.IPv4Network(args.lan_cidr)
@@ -21,7 +25,8 @@ assert ip in network and network.is_private, 'Use a private LAN subnet containin
 assert all(c.isalnum() or c in '.-' for c in args.hostname), 'Invalid hostname'
 home = pathlib.Path.home()
 assert not any(c.isspace() or c in '"%\\' for c in str(home)), 'Unsupported home path'
-assert (ROOT / 'target/release/tc').is_file() and (ROOT / 'dist/index.html').is_file(), 'Build tc and web assets first'
+if not args.proxy_only:
+    assert (ROOT / 'target/release/tc').is_file() and (ROOT / 'dist/index.html').is_file(), 'Build tc and web assets first'
 assert pathlib.Path('/usr/sbin/nginx').is_file(), 'Install the distribution nginx package first'
 assert subprocess.check_output(['loginctl', 'show-user', str(os.getuid()), '-p', 'Linger', '--value'], text=True).strip() == 'yes', 'Enable loginctl linger for this user first'
 os.umask(0o077)
@@ -31,22 +36,27 @@ data = home / '.local/share/tradeclimb'
 units = home / '.config/systemd/user'
 for directory in (base / 'releases', config, data, units):
     directory.mkdir(parents=True, exist_ok=True)
-sha = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=ROOT, text=True).strip()
-stamp = datetime.datetime.now(datetime.UTC).strftime('%Y%m%dT%H%M%SZ')
-release = base / 'releases' / f'{stamp}-{sha}'
-release.mkdir()
-shutil.copy2(ROOT / 'target/release/tc', release / 'tc')
-shutil.copytree(ROOT / 'dist', release / 'dist')
-(release / 'sdk').mkdir()
-for name in ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'):
-    shutil.copy2(ROOT / name, release / 'sdk' / name)
-for name in ('tc-core', 'tc-sdk'):
-    shutil.copytree(ROOT / 'crates' / name, release / 'sdk/crates' / name)
-(release / 'scripts').mkdir()
-shutil.copy2(ROOT / 'scripts/service-ops.py', release / 'scripts/service-ops.py')
-revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True)
-dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
-(release / 'source.txt').write_text(revision + ('dirty\n' if dirty else ''))
+access_file = config / 'access.json'
+saved_clients = json.loads(access_file.read_text()).get('clients', []) if access_file.exists() else []
+clients = sorted({str(ipaddress.IPv4Network(value, strict=False)) for value in
+                  (args.allow_client if args.allow_client is not None else saved_clients)})
+if not args.proxy_only:
+    sha = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=ROOT, text=True).strip()
+    stamp = datetime.datetime.now(datetime.UTC).strftime('%Y%m%dT%H%M%SZ')
+    release = base / 'releases' / f'{stamp}-{sha}'
+    release.mkdir()
+    shutil.copy2(ROOT / 'target/release/tc', release / 'tc')
+    shutil.copytree(ROOT / 'dist', release / 'dist')
+    (release / 'sdk').mkdir()
+    for name in ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'):
+        shutil.copy2(ROOT / name, release / 'sdk' / name)
+    for name in ('tc-core', 'tc-sdk'):
+        shutil.copytree(ROOT / 'crates' / name, release / 'sdk/crates' / name)
+    (release / 'scripts').mkdir()
+    shutil.copy2(ROOT / 'scripts/service-ops.py', release / 'scripts/service-ops.py')
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True)
+    dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
+    (release / 'source.txt').write_text(revision + ('dirty\n' if dirty else ''))
 hosts = [args.hostname, args.hostname + '.local', str(ip), 'localhost']
 if not (config / 'lan.crt').exists():
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:3072', '-nodes', '-days', '365',
@@ -60,8 +70,11 @@ assert ('IP Address', str(ip)) in certificate['subjectAltName'], 'Existing certi
 current = base / 'current'
 values = {'HOME': home, 'RELEASE': current, 'CONFIG': config, 'DATA': data,
           'HOSTS': ','.join(hosts), 'SERVER_NAMES': ' '.join(hosts),
-          'LAN_CIDR': network, 'RUNTIME': f'/run/user/{os.getuid()}'}
+          'LAN_CIDR': network, 'RUNTIME': f'/run/user/{os.getuid()}',
+          'EXTRA_ALLOW': '\n        '.join(f'allow {client};' for client in clients)}
 for template in (ROOT / 'deploy').iterdir():
+    if args.proxy_only and template.name != 'nginx.conf':
+        continue
     text = template.read_text()
     for key, value in values.items():
         text = text.replace('@' + key + '@', str(value))
@@ -71,6 +84,11 @@ for template in (ROOT / 'deploy').iterdir():
 runtime = pathlib.Path(values['RUNTIME']) / 'tradeclimb-proxy'
 runtime.mkdir(exist_ok=True)
 subprocess.run(['/usr/sbin/nginx', '-t', '-c', str(config / 'nginx.conf')], check=True)
+access_file.write_text(json.dumps({'clients': clients}, indent=2) + '\n')
+if args.proxy_only:
+    subprocess.run(['systemctl', '--user', 'reload', 'tradeclimb-lan.service'], check=True)
+    print(f'LAN proxy reloaded; additional clients: {", ".join(clients) or "none"}')
+    raise SystemExit(0)
 pending = base / 'current.new'
 pending.unlink(missing_ok=True)
 pending.symlink_to(release)
