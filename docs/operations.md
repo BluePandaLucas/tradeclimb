@@ -15,6 +15,122 @@ Open `http://127.0.0.1:8080` and sign in with the private owner key. Locate it u
 
 The service accepts loopback IP listeners only. For another device, use an HTTPS reverse proxy, configure `TC_ALLOWED_HOSTS` for its hostname, and forward the browser's Host/Origin. HTTPS-origin sign-in sets Secure cookies. The static assets directory must be separate from private data. Anonymous APIs fail with 401; agent access outside development fails with 403. One service owns a data directory at a time. Data defaults to `var/` and is owner-only (0700), including all raw data, model caches and evaluation artifacts. Backups are also private. Restoring a backup generates a new owner key because the key file is not included; old owner sessions stop working.
 
+## Persistent service and LAN access
+
+`scripts/install-service` installs prebuilt native/browser assets, a reviewed SDK
+snapshot and user units. The installed service runs independently of the checkout;
+it never compiles at boot. Keep the pinned Rust toolchain and reviewed Cargo cache
+installed for candidate builds. Bubblewrap and the user's systemd manager must work
+without an interactive session. Installation requires `loginctl` linger:
+
+```bash
+sudo loginctl enable-linger "$USER"
+# Install nginx from the distribution. If this is a new nginx installation,
+# mask its default system unit first so it does not open an unrelated port 80.
+sudo systemctl mask nginx.service
+sudo apt-get install --no-install-recommends nginx-light
+cargo build --locked --release --bin tc
+./scripts/build-web
+./scripts/install-service --lan-ip 192.168.0.223 --lan-cidr 192.168.0.0/24 --hostname buntubox1
+```
+
+Do not mask an existing proxy used by other applications. This deployment runs its
+own unprivileged nginx process with a separate configuration. Buntubox1 uses
+**https://192.168.0.223:8443** (or `https://buntubox1:8443` if the client resolves
+that name). Port 8080 stays on loopback; port 8443 permits only loopback and
+`192.168.0.0/24`. No router port forwarding is needed. Reserve this LAN IP in DHCP;
+if it changes, regenerate the certificate for the new address and rerun installation.
+
+The first installation creates a one-year self-signed certificate in
+`~/.config/tradeclimb/lan.crt`, with the private key next to it. Verify its
+fingerprint on the host (`openssl x509 -in ~/.config/tradeclimb/lan.crt -noout
+-fingerprint -sha256`) and trust the public certificate on the client. Until then,
+the browser reports an untrusted issuer. Never copy `lan.key`. Renewal requires
+replacing the certificate/key pair, restarting `tradeclimb-lan.service` and
+updating client trust. Health checks warn thirty days before expiry.
+
+Persistent paths:
+
+| Path | Contents |
+| --- | --- |
+| `~/.local/lib/tradeclimb/releases/` | Installed release snapshots |
+| `~/.local/lib/tradeclimb/current` | Active release symlink |
+| `~/.local/share/tradeclimb/` | Private research database, artifacts and owner key |
+| `~/.local/share/tradeclimb-backups/` | Last seven successful daily local backups |
+| `~/.local/state/tradeclimb/` | Latest health result and bounded soak reports |
+| `~/.config/tradeclimb/` | LAN proxy configuration and certificate/key |
+
+Installation preserves the data directory; it starts empty unless research state
+was explicitly restored there. Never run `demo` against the research directory to
+populate an empty UI. Restore an existing backup as a complete directory with the
+service stopped, using the backup/restore guidance below. Old agent credentials
+remain recorded in a restored database; provision or rotate agent token files
+explicitly. The new owner key is generated on first open.
+
+```bash
+systemctl --user status tradeclimb tradeclimb-lan --no-pager
+journalctl --user -u tradeclimb -u tradeclimb-lan -n 100 --no-pager
+~/.local/lib/tradeclimb/current/tc --data-dir ~/.local/share/tradeclimb auth status
+systemctl --user list-timers 'tradeclimb-*'
+systemctl --user start tradeclimb-backup.service tradeclimb-health.service
+cat ~/.local/state/tradeclimb/health.json
+```
+
+Both servers restart after failure and start at boot via the lingering user manager.
+Ten rapid failures in five minutes stop restart loops; inspect the journal and use
+`systemctl --user reset-failed` after fixing the cause. Clean shutdown has a
+40-second deadline. No interactive terminal is needed. Existing worker recovery
+rules still apply: interrupted historical/build attempts require a new attempt;
+queued work survives. The sandbox prerequisite probe runs before every start.
+
+Backups use TC's SQLite backup API and immutable artifact copying, check SQLite
+integrity and publish a completed directory before pruning old backups. Failed
+`.partial-*` directories remain for inspection and are never treated as successful
+backups. Copies reserve an estimated full backup plus 5 GiB free space. Raw download
+caches are excluded. These are **same-disk recovery copies**, not protection against
+host/disk loss; arrange an off-host copy separately. No credentials are written to
+the journal. The public TLS certificate and service configuration are outside TC's
+research backup and need separate host recovery provisions.
+
+Health runs every five minutes and verifies both units, authenticated HTTPS, the
+UI document and at least 5 GiB disk headroom. It records warnings for old/missing
+backups, expiring agent credentials and the LAN certificate. Failures appear as
+failed systemd units; this does not send external notifications. Journals use host
+retention and the service rate-limits log bursts.
+
+To update, build and validate a new revision, rerun the installer, and inspect the
+health result. Installed releases are retained for manual rollback: stop TC, point
+`current` to the previous release and restart both services. Check database/schema
+compatibility before rolling back a future schema-changing release; binaries alone
+cannot roll back database changes. Do not delete a release still used by a worker.
+
+### Persistent-service acceptance and overnight observation
+
+```bash
+python3 scripts/service-smoke.py
+python3 scripts/smoke.py
+./scripts/check-sandbox
+# A bounded health-only observation; does not launch an orchestrator or spend queries.
+systemd-run --user --unit=tradeclimb-soak --property=RuntimeMaxSec=13h \
+  --property=UMask=0077 /usr/bin/python3 \
+  "$HOME/.local/lib/tradeclimb/current/scripts/service-ops.py" soak --hours 12
+```
+
+`service-smoke.py` uses the deployed service template, isolated temporary synthetic
+state and another loopback port. It exercises terminal-free startup, graceful stop,
+SIGKILL/automatic restart during a real isolated worker, worker cleanup, retained
+owner identity/validation count, and restoration with the original tree hidden.
+It verifies a retained report and executes a new evaluation after restoration.
+The existing workflow smoke additionally restores and executes a registered
+external SDK artifact. No real validation/final observations are consumed by QA.
+
+Soak samples are flushed once per minute under `~/.local/state/tradeclimb/`.
+Success writes a final `complete` record; a missing completion record is not a pass.
+Inspect `systemctl --user status tradeclimb-soak` and its journal. The soak checks
+service/HTTP/storage health, not research quality, sustained evaluation load or live
+paper-feed performance. A real cold host reboot is a separate acceptance check;
+enabled units and linger establish configuration, not evidence of a completed reboot.
+
 ## Development-agent access
 
 The tool has one owner; there is no multi-user registration or third-party identity service. Future strategy orchestration remains a separate project. Provision its locked Unix identity and scoped credential as the owner:

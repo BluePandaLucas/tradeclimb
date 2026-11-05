@@ -1,0 +1,9 @@
+[Unit]
+Description=TradeClimb service, HTTPS, disk and credential check
+After=tradeclimb.service tradeclimb-lan.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 @RELEASE@/scripts/service-ops.py health
+TimeoutStartSec=45

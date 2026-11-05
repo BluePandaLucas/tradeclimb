@@ -1,0 +1,9 @@
+[Unit]
+Description=TradeClimb consistent local backup
+After=tradeclimb.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 @RELEASE@/scripts/service-ops.py backup
+TimeoutStartSec=1h
