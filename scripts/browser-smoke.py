@@ -64,6 +64,61 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    page.wait_for_function('getComputedStyle(document.documentElement).backgroundColor === "rgb(243, 246, 246)"')
    page.emulate_media(color_scheme='dark')
    page.wait_for_function('getComputedStyle(document.documentElement).backgroundColor === "rgb(17, 26, 30)"')
+   # Tablet regression: text must stay within its table cell and metadata track.
+   # Clone a rendered row to exercise long names, running progress and validation
+   # without changing scientific results or submitting work.
+   page.locator('.evaluation-row').first.wait_for()
+   page.evaluate("""() => {
+    const original = document.querySelector('.evaluation-row');
+    for (const validation of [false, true]) {
+     const row = original.cloneNode(true);
+     row.dataset.tabletFixture = 'true';
+     row.querySelector('.run-name').textContent = 'Long strategy name / ' + 'candidate'.repeat(16);
+     const values = row.querySelectorAll('.eval-state-line');
+     values[0].querySelector('.badge').textContent = validation ? 'validation' : 'development';
+     values[1].querySelector('.state').textContent = validation ? 'completed' : 'preparing · 100%';
+     values[2].querySelector('.eligibility-text').textContent = validation ? 'Sharpe only' : 'Inspect eligibility reasons';
+     if (validation) row.querySelectorAll('.numeric').forEach(el => el.textContent = 'Restricted');
+     original.parentElement.append(row);
+    }
+   }""")
+   for scheme in ['light','dark']:
+    page.emulate_media(color_scheme=scheme)
+    for width in [768,810,820,834,1024,1080,1112,1180,1194,1366]:
+     page.set_viewport_size({'width':width,'height':1024})
+     for collapsed in [False,True]:
+      if page.locator('.shell').evaluate('el=>el.classList.contains("sidebar-collapsed")') != collapsed:
+       page.get_by_role('button',name='Collapse sidebar' if collapsed else 'Expand sidebar',exact=True).click()
+       page.wait_for_timeout(250)
+      failures=page.evaluate("""() => {
+       const failures = [];
+       function checkText(container) {
+        const box = container.getBoundingClientRect();
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+         const node = walker.currentNode;
+         if (!node.textContent.trim() || node.parentElement.closest('.meta-label')) continue;
+         const range = document.createRange(); range.selectNodeContents(node);
+         for (const rect of range.getClientRects()) {
+          if (rect.width && (rect.left < box.left - 1 || rect.right > box.right + 1))
+           failures.push(node.textContent.trim());
+         }
+        }
+       }
+       document.querySelectorAll('.evaluations td, .evaluations th, .meta-values > *, .meta-column-headings > *').forEach(checkText);
+       if (document.documentElement.scrollWidth > innerWidth) failures.push('page overflow');
+       return failures;
+      }""")
+      assert not failures, f'{width}px / {scheme} / collapsed={collapsed}: {failures}'
+    page.set_viewport_size({'width':820,'height':1180})
+    scroll=page.locator('.evaluations .table-scroll')
+    scroll.evaluate('el=>el.scrollLeft=el.scrollWidth')
+    assert scroll.evaluate('el=>el.scrollLeft > 0'), 'tablet table cannot scroll to remaining columns'
+    scroll.evaluate('el=>el.scrollLeft=0')
+   page.evaluate('document.querySelectorAll("[data-tablet-fixture]").forEach(el=>el.remove())')
+   page.set_viewport_size({'width':1440,'height':1000})
+   page.get_by_role('button',name='Expand sidebar',exact=True).click()
+   page.emulate_media(color_scheme='dark')
    page.get_by_role('button',name='Trend explorer',exact=True).first.wait_for()
    page.get_by_role('button',name='Backtests',exact=True).click()
    assert page.locator('.stats').count()==0
@@ -283,7 +338,7 @@ with tempfile.TemporaryDirectory(prefix='tc-ui-') as folder:
    service.wait(timeout=8)
    assert service.returncode==0
    browser.close()
-   print('PASS: clickable rows, grouped tuning trials, pagination, duplicate tuning protection, stable charts, sidebar, themes, leaderboard, paper controls, mobile layout, and Ctrl+C; no page errors')
+   print('PASS: clickable rows, grouped tuning trials, pagination, duplicate tuning protection, stable charts, sidebar, themes, leaderboard, paper controls, tablet column containment, mobile layout, and Ctrl+C; no page errors')
  finally:
   service.send_signal(signal.SIGINT)
   try:service.wait(timeout=30)

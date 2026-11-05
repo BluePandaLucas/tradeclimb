@@ -4955,3 +4955,38 @@ input::placeholder {
     flex-shrink: 0;
   }
 }
+/* Keep the six-column evaluation table readable in tablet-sized workspaces.
+   Its scroll container handles narrow viewports; content stays in its own cell. */
+@media (min-width: 651px) {
+  .evaluations .table-scroll table {
+    min-width: 1120px;
+  }
+  .evaluations .run-name,
+  .evaluations .run-window {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .evaluations .meta-values,
+  .evaluations .meta-column-headings {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 4fr);
+    gap: 10px;
+  }
+  .evaluations .meta-values > *,
+  .evaluations .meta-column-headings > * {
+    position: relative;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .evaluations .meta-values .state,
+  .evaluations .meta-values .badge,
+  .evaluations .meta-values .eligibility-text {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .evaluations .state::before {
+    flex-shrink: 0;
+  }
+}
