@@ -9,6 +9,7 @@ import pathlib
 import shutil
 import ssl
 import subprocess
+from deployment_guard import require_idle
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -25,6 +26,9 @@ assert ip in network and network.is_private, 'Use a private LAN subnet containin
 assert all(c.isalnum() or c in '.-' for c in args.hostname), 'Invalid hostname'
 home = pathlib.Path.home()
 assert not any(c.isspace() or c in '"%\\' for c in str(home)), 'Unsupported home path'
+data = home / '.local/share/tradeclimb'
+if not args.proxy_only:
+    require_idle(data)
 if not args.proxy_only:
     assert (ROOT / 'target/release/tc').is_file() and (ROOT / 'dist/index.html').is_file(), 'Build tc and web assets first'
 assert pathlib.Path('/usr/sbin/nginx').is_file(), 'Install the distribution nginx package first'
@@ -32,7 +36,6 @@ assert subprocess.check_output(['loginctl', 'show-user', str(os.getuid()), '-p',
 os.umask(0o077)
 base = home / '.local/lib/tradeclimb'
 config = home / '.config/tradeclimb'
-data = home / '.local/share/tradeclimb'
 units = home / '.config/systemd/user'
 for directory in (base / 'releases', config, data, units):
     directory.mkdir(parents=True, exist_ok=True)
@@ -90,6 +93,8 @@ if args.proxy_only:
     print(f'LAN proxy reloaded; additional clients: {", ".join(clients) or "none"}')
     raise SystemExit(0)
 pending = base / 'current.new'
+# Recheck after staging: work may have started while assets were copied.
+require_idle(data)
 pending.unlink(missing_ok=True)
 pending.symlink_to(release)
 pending.replace(current)

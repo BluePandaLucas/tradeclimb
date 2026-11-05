@@ -113,7 +113,15 @@ failed systemd units; this does not send external notifications. Journals use ho
 retention and the service rate-limits log bursts.
 
 To update, build and validate a new revision, rerun the installer, and inspect the
-health result. Installed releases are retained for manual rollback: stop TC, point
+health result. The installer refuses full deployment while any evaluation or candidate
+build is nonterminal (including unknown states), or a final evaluation is running.
+It reads one SQLite snapshot before staging and rechecks before switching releases;
+unreadable state fails closed. Wait for terminal work and rerun; there is no force
+bypass that silently interrupts it. `--proxy-only` remains available without a TC
+restart. This preflight is not an admission lock: avoid starting work concurrently
+with deployment. Direct `systemctl` restarts bypass the installer check.
+`python3 scripts/deployment_guard.py ~/.local/share/tradeclimb` checks idle state
+without staging assets or touching services. Installed releases are retained for manual rollback: stop TC, point
 `current` to the previous release and restart both services. Check database/schema
 compatibility before rolling back a future schema-changing release; binaries alone
 cannot roll back database changes. Do not delete a release still used by a worker.
